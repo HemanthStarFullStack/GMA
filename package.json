@@ -9,9 +9,23 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@auth/mongodb-adapter": "^3.11.1",
+    "@google/generative-ai": "^0.24.1",
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
+    "date-fns": "^4.1.0",
+    "duckduckgo-images-api": "^1.0.5",
+    "framer-motion": "^12.23.25",
+    "googlethis": "^1.8.0",
+    "lucide-react": "^0.555.0",
+    "mongodb": "^7.0.0",
+    "mongoose": "^9.0.0",
     "next": "16.0.6",
+    "next-auth": "^5.0.0-beta.30",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "react-webcam": "^7.2.0",
+    "recharts": "^3.5.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
