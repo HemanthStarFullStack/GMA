@@ -12,6 +12,8 @@ export default function ScanPage() {
     const [scannedCode, setScannedCode] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [uploadMode, setUploadMode] = useState(false);
+    const [showNotFound, setShowNotFound] = useState(false);
+    const [failedBarcode, setFailedBarcode] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const processWithAI = async (imageSrc: string) => {
@@ -95,6 +97,35 @@ export default function ScanPage() {
         }
     };
 
+    const handleManualAdd = async (barcode: string) => {
+        // Fallback logic: Add as generic item
+        try {
+            const res = await fetch('/api/inventory', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    productId: barcode,
+                    quantity: 1,
+                    unit: 'units',
+                    productDetails: {
+                        name: 'Unknown Product',
+                        brand: 'Unknown',
+                        category: 'Other',
+                        addedBy: 'manual'
+                    }
+                })
+            });
+
+            if (res.ok) {
+                router.push('/inventory');
+            } else {
+                alert('Failed to add item');
+            }
+        } catch (e) {
+            console.error('Manual add error', e);
+        }
+    };
+
     const handleScan = async (barcode: string) => {
         if (isProcessing) return;
 
@@ -102,7 +133,7 @@ export default function ScanPage() {
         setIsProcessing(true);
 
         try {
-            // 1. First, try to lookup the barcode using UPCitemDB
+            // 1. Lookup Barcode
             const lookupRes = await fetch(`/api/barcode?barcode=${barcode}`);
             const lookupData = await lookupRes.json();
 
@@ -114,39 +145,35 @@ export default function ScanPage() {
             };
 
             if (lookupData.success) {
-                // Found product in UPCitemDB!
-                setScannedCode(`✓ ${lookupData.data.name} by ${lookupData.data.brand}`);
-                productData.productDetails = lookupData.data;
-            } else if (lookupData.code === 'NOT_FOUND') {
-                // Product not found in UPCitemDB - this is expected for many products
-                console.log('Product not in UPCitemDB database, adding with basic info');
-                setScannedCode(`Barcode: ${barcode} (Unknown product)`);
-            } else if (lookupData.code === 'RATE_LIMIT_EXCEEDED') {
-                // Hit daily limit (100 requests)
-                alert('Daily barcode lookup limit reached. Product will be added with barcode only.');
-                setScannedCode(`Barcode: ${barcode} (Limit reached)`);
+                // Found product!
+                const item = lookupData.data;
+                setScannedCode(`✓ ${item.name} (${lookupData.source})`);
+                productData.productDetails = item;
+
+                // Add to inventory
+                const res = await fetch('/api/inventory', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(productData)
+                });
+
+                if (res.ok) {
+                    setTimeout(() => {
+                        router.push('/inventory');
+                    }, 1500);
+                } else {
+                    alert('Failed to add item to inventory');
+                    setIsProcessing(false);
+                }
+
             } else {
-                console.warn('UPCitemDB lookup failed:', lookupData.message);
+                // Not found in ANY provider
+                console.log('Product not found in any database');
+                setFailedBarcode(barcode);
+                setShowNotFound(true);
+                // Do NOT auto-add. Let user decide in dialog.
             }
 
-            // 2. Add to inventory (with or without product details)
-            const res = await fetch('/api/inventory', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(productData)
-            });
-
-            const data = await res.json();
-
-            if (data.success) {
-                setTimeout(() => {
-                    router.push('/inventory');
-                }, 2000); // Slightly longer delay to show the product name
-            } else {
-                console.error('Failed to add item:', data.message);
-                alert('Failed to add item to inventory');
-                setIsProcessing(false);
-            }
         } catch (error) {
             console.error('Scan error:', error);
             alert('Error processing barcode');
@@ -274,48 +301,87 @@ export default function ScanPage() {
                         </div>
                     )}
 
+                    {/* Not Found Dialog */}
+                    {showNotFound && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+                            <div className="bg-gray-800 rounded-xl p-6 max-w-sm w-full border border-gray-700 shadow-2xl">
+                                <div className="flex items-start gap-4 mb-4">
+                                    <div className="bg-yellow-500/20 p-2 rounded-full">
+                                        <Sparkles className="w-6 h-6 text-yellow-500" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-bold text-white">Product Not Found</h3>
+                                        <p className="text-gray-400 text-sm mt-1">
+                                            We couldn't find details for barcode <span className="font-mono text-yellow-400">{failedBarcode}</span>.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowNotFound(false);
+                                            setUploadMode(true);
+                                        }}
+                                        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+                                    >
+                                        <CameraIcon className="w-5 h-5" />
+                                        Identify with AI Camera
+                                    </button>
+
+                                    <div className="relative">
+                                        <div className="absolute inset-0 flex items-center">
+                                            <div className="w-full border-t border-gray-600"></div>
+                                        </div>
+                                        <div className="relative flex justify-center text-xs uppercase">
+                                            <span className="bg-gray-800 px-2 text-gray-500">Or</span>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        onClick={() => {
+                                            setShowNotFound(false);
+                                            // Fallback to manual entry (just store generic known barcode)
+                                            // Ideally forward to an edit page, but for now just saving as "Unknown" is the backup
+                                            handleManualAdd(failedBarcode || '');
+                                        }}
+                                        className="w-full py-2 px-4 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg font-medium text-sm transition-colors"
+                                    >
+                                        Add as Unknown Item
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            setShowNotFound(false);
+                                            setIsProcessing(false);
+                                            setScannedCode(null);
+                                        }}
+                                        className="w-full py-2 text-gray-500 hover:text-gray-300 text-sm"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Instructions */}
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-                        <h3 className="font-semibold text-blue-900 mb-2">
-                            {uploadMode ? 'Upload Tips:' : 'How to scan:'}
+                    <div className="bg-blue-900/40 border border-blue-800 rounded-xl p-6 mt-6">
+                        <h3 className="font-semibold text-blue-100 mb-2 flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-blue-400" />
+                            {uploadMode ? 'AI Camera Tips:' : 'Fast Scanning:'}
                         </h3>
                         {uploadMode ? (
-                            <ul className="space-y-2 text-sm text-blue-800">
-                                <li className="flex items-start gap-2">
-                                    <span className="text-blue-600 font-bold">1.</span>
-                                    <span>Take a clear photo of the product</span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <span className="text-blue-600 font-bold">2.</span>
-                                    <span>Ensure good lighting and product is visible</span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <span className="text-blue-600 font-bold">3.</span>
-                                    <span>Click "Choose Image" and select the photo</span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <span className="text-blue-600 font-bold">4.</span>
-                                    <span>AI will identify the product and add it to inventory</span>
-                                </li>
+                            <ul className="space-y-2 text-sm text-blue-200/80">
+                                <li>• Photo of branding/packaging works best</li>
+                                <li>• Ensure good lighting</li>
+                                <li>• AI will extract Name, Brand & Flavor</li>
                             </ul>
                         ) : (
-                            <ul className="space-y-2 text-sm text-blue-800">
-                                <li className="flex items-start gap-2">
-                                    <span className="text-blue-600 font-bold">1.</span>
-                                    <span>Point your camera at the product barcode</span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <span className="text-blue-600 font-bold">2.</span>
-                                    <span>Keep the barcode within the scanning frame</span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <span className="text-blue-600 font-bold">3.</span>
-                                    <span>Hold steady until the scan is detected</span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <span className="text-blue-600 font-bold">4.</span>
-                                    <span>Or click "Take Photo" to use AI identification</span>
-                                </li>
+                            <ul className="space-y-2 text-sm text-blue-200/80">
+                                <li>• Point camera at barcode</li>
+                                <li>• If not found, use AI Camera fallback</li>
+                                <li>• Works with UPC, EAN & most formats</li>
                             </ul>
                         )}
                     </div>

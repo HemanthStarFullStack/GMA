@@ -1,18 +1,22 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { Inventory, Product } from '@/lib/models';
+import { auth } from '@/auth';
 
 export async function GET() {
     try {
+        const session = await auth();
+        if (!session || !session.user || !session.user.id) {
+            return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+        }
+
         await connectDB();
 
-        // Fetch inventory with product details
-        // Note: In a real app, we'd filter by userId from auth session
-        const inventoryItems = await Inventory.find()
+        // Fetch inventory ONLY for the logged-in user
+        const inventoryItems = await Inventory.find({ userId: session.user.id })
             .sort({ purchaseDate: -1 });
 
-        // Manually populate product details since we're using separate collections
-        // and might not have strict references set up for population yet
+        // Manually populate product details
         const populatedItems = await Promise.all(inventoryItems.map(async (item) => {
             const product = await Product.findOne({ barcode: item.productId });
             return {
@@ -36,6 +40,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
     try {
+        const session = await auth();
+        if (!session || !session.user || !session.user.id) {
+            return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+        }
+
         await connectDB();
         const body = await request.json();
 
@@ -46,7 +55,7 @@ export async function POST(request: Request) {
                 {
                     name: body.productDetails.name,
                     brand: body.productDetails.brand,
-                    flavor: body.productDetails.flavor, // Added flavor
+                    flavor: body.productDetails.flavor,
                     category: body.productDetails.category || 'Other',
                     imageUrl: body.productDetails.imageUrl,
                     defaultUnit: body.productDetails.unit || 'units',
@@ -57,10 +66,10 @@ export async function POST(request: Request) {
             );
         }
 
-        // Create inventory item
+        // Create inventory item linked to the USER
         const newItem = await Inventory.create({
-            userId: body.userId || 'demo_user', // Fallback for now
-            productId: body.productId, // This is the barcode or AI-ID
+            userId: session.user.id, // Enforce authenticated user ID
+            productId: body.productId,
             quantity: body.quantity || 1,
             unit: body.unit || 'units',
             purchaseDate: new Date(),
@@ -83,18 +92,25 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
     try {
+        const session = await auth();
+        if (!session || !session.user || !session.user.id) {
+            return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+        }
+
         await connectDB();
         const { searchParams } = new URL(request.url);
         const id = searchParams.get('id');
 
         if (!id) {
-            return NextResponse.json({
-                success: false,
-                message: 'Item ID is required'
-            }, { status: 400 });
+            return NextResponse.json({ success: false, message: 'Item ID is required' }, { status: 400 });
         }
 
-        await Inventory.findByIdAndDelete(id);
+        // Ensure user can only delete their own items
+        const deletedItem = await Inventory.findOneAndDelete({ _id: id, userId: session.user.id });
+
+        if (!deletedItem) {
+            return NextResponse.json({ success: false, message: 'Item not found or unauthorized' }, { status: 404 });
+        }
 
         return NextResponse.json({
             success: true,

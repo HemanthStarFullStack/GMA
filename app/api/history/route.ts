@@ -1,12 +1,19 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { ConsumptionLog, Inventory } from '@/lib/models';
+import { auth } from '@/auth';
 
 export async function GET() {
     try {
+        const session = await auth();
+        if (!session || !session.user || !session.user.id) {
+            return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+        }
+
         await connectDB();
 
-        const logs = await ConsumptionLog.find()
+        // Fetch logs ONLY for the logged-in user
+        const logs = await ConsumptionLog.find({ userId: session.user.id })
             .sort({ consumedDate: -1 })
             .limit(50);
 
@@ -25,12 +32,17 @@ export async function GET() {
 
 export async function POST(request: Request) {
     try {
+        const session = await auth();
+        if (!session || !session.user || !session.user.id) {
+            return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+        }
+
         await connectDB();
         const body = await request.json();
 
-        // Create consumption log
+        // Create consumption log for the authenticated user
         const newLog = await ConsumptionLog.create({
-            userId: body.userId || 'demo_user',
+            userId: session.user.id,
             productId: body.productId,
             inventoryId: body.inventoryId,
             consumedDate: new Date(),
@@ -39,9 +51,11 @@ export async function POST(request: Request) {
         });
 
         // Update inventory status
-        await Inventory.findByIdAndUpdate(body.inventoryId, {
-            status: 'consumed'
-        });
+        // Ensure we only update if the user owns this inventory item
+        await Inventory.findOneAndUpdate(
+            { _id: body.inventoryId, userId: session.user.id },
+            { status: 'consumed' }
+        );
 
         return NextResponse.json({
             success: true,
