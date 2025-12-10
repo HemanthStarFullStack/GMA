@@ -29,28 +29,49 @@ export default function BarcodeScanner({ onScan, onError, onCapture }: BarcodeSc
         const scan = async () => {
             while (scanning && webcamRef.current?.video) {
                 try {
-                    const video = webcamRef.current.video;
-                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                        const result = await codeReader.decodeFromVideoElement(video);
+                    // Take a snapshot from the video instead of decoding video directly
+                    const imageSrc = webcamRef.current.getScreenshot();
 
-                        if (result && result.getText() !== lastScanned) {
-                            const barcode = result.getText();
-                            setLastScanned(barcode);
-                            setScanIndicator(true);
-                            onScan(barcode);
+                    if (imageSrc) {
+                        // Create image element from snapshot
+                        const img = document.createElement('img');
+                        img.src = imageSrc;
 
-                            // Reset indicator after animation
-                            setTimeout(() => setScanIndicator(false), 500);
+                        await new Promise((resolve) => {
+                            img.onload = resolve;
+                        });
+
+                        // Decode from the snapshot (same as upload)
+                        const result = await codeReader.decodeFromImageElement(img);
+
+                        if (result) {
+                            console.log('✅ Barcode detected:', result.getText()); // DEBUG
+                            if (result.getText() !== lastScanned) {
+                                const barcode = result.getText();
+                                setLastScanned(barcode);
+                                setScanIndicator(true);
+                                setIsScanning(false); // Stop scanning after detection
+                                onScan(barcode);
+
+                                // Reset indicator after animation
+                                setTimeout(() => setScanIndicator(false), 500);
+
+                                // Exit the scanning loop immediately
+                                scanning = false;
+                                break;
+                            }
                         }
                     }
                 } catch (err) {
                     if (!(err instanceof NotFoundException)) {
                         console.error("Scan error:", err);
+                    } else {
+                        // This is normal - no barcode detected in this frame
                     }
                 }
 
-                // Add small delay between scans
-                await new Promise(resolve => setTimeout(resolve, 100));
+                // Delay between snapshots (scan ~2 times per second)
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
         };
 
@@ -60,7 +81,7 @@ export default function BarcodeScanner({ onScan, onError, onCapture }: BarcodeSc
             scanning = false;
             codeReader.reset();
         };
-    }, [isScanning, lastScanned, onScan]);
+    }, [isScanning, onScan]);
 
     const handleUserMediaError = () => {
         setCameraError(true);
@@ -84,22 +105,39 @@ export default function BarcodeScanner({ onScan, onError, onCapture }: BarcodeSc
                 img.onload = resolve;
             });
 
-            const result = await codeReader.decodeFromImageElement(img);
+            // 1. Try to decode barcode
+            try {
+                const result = await codeReader.decodeFromImageElement(img);
+                if (result) {
+                    const barcode = result.getText();
+                    setLastScanned(barcode);
+                    setScanIndicator(true);
+                    onScan(barcode);
+                    setTimeout(() => setScanIndicator(false), 500);
+                    return; // Success! Be sure to return.
+                }
+            } catch (decodeErr) {
+                // ZXing failed to find barcode. proceed to fallback.
+                console.log("Barcode decode failed, falling back to AI:", decodeErr);
+            }
 
-            if (result) {
-                const barcode = result.getText();
-                setLastScanned(barcode);
-                setScanIndicator(true);
-                onScan(barcode);
-                setTimeout(() => setScanIndicator(false), 500);
+            // 2. Fallback: If no barcode found, send to AI (onCapture)
+            if (onCapture) {
+                // Convert to base64 for AI processing
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const base64String = reader.result as string;
+                    onCapture(base64String); // Trigger AI flow in parent
+                };
+                reader.readAsDataURL(file);
             } else {
-                onError?.("No barcode found in the image. Please try again.");
+                onError?.("No barcode found and AI capture not available.");
             }
 
             URL.revokeObjectURL(imageUrl);
         } catch (err) {
-            console.error("File decode error:", err);
-            onError?.("Failed to read barcode from image. Please ensure the barcode is clear and visible.");
+            console.error("File processing error:", err);
+            onError?.("Failed to process image.");
         } finally {
             setIsProcessingFile(false);
             // Reset file input
@@ -198,6 +236,11 @@ export default function BarcodeScanner({ onScan, onError, onCapture }: BarcodeSc
                                         <Loader2 className="w-4 h-4 animate-spin" />
                                         <span className="text-sm font-medium">Scanning for barcodes...</span>
                                     </>
+                                ) : lastScanned ? (
+                                    <>
+                                        <Camera className="w-4 h-4 text-green-400" />
+                                        <span className="text-sm font-medium">Barcode detected! Click below to scan another</span>
+                                    </>
                                 ) : (
                                     <>
                                         <Camera className="w-4 h-4" />
@@ -207,7 +250,18 @@ export default function BarcodeScanner({ onScan, onError, onCapture }: BarcodeSc
                             </div>
                         </div>
 
-                        <div className="flex gap-3 pointer-events-auto">
+                        <div className="flex gap-3 pointer-events-auto">{!isScanning && lastScanned && (
+                            <button
+                                onClick={() => {
+                                    setLastScanned("");
+                                    setIsScanning(true);
+                                }}
+                                className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-full font-semibold shadow-lg transition-colors flex items-center gap-2"
+                            >
+                                <Camera className="w-5 h-5" />
+                                Scan Another
+                            </button>
+                        )}
                             {onCapture && (
                                 <button
                                     onClick={() => {

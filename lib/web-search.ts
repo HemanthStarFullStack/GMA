@@ -107,3 +107,36 @@ export async function findAndDownloadProductImage(query: string): Promise<string
         return null;
     }
 }
+
+/**
+ * Searches for product images and returns multiple URLs for verification
+ */
+export async function findProductImageUrls(query: string, maxResults: number = 5): Promise<string[]> {
+    try {
+        console.log(`🔍 Searching web for images: "${query}"`);
+
+        const results = await google.image(query + " product packaging", { safe: true });
+
+        if (!results || results.length === 0) {
+            console.log("❌ No images found for query.");
+            return [];
+        }
+
+        // Extract and validate URLs
+        const imageUrls: string[] = [];
+        for (let i = 0; i < Math.min(results.length, maxResults); i++) {
+            const url = results[i].url;
+            if (url && isValidUrl(url)) {
+                imageUrls.push(url);
+            }
+        }
+
+        console.log(`✅ Found ${imageUrls.length} valid image URLs`);
+        return imageUrls;
+
+    } catch (error) {
+        console.error("⚠️ Web image search failed:", error);
+        return [];
+    }
+}
+

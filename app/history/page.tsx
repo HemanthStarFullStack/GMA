@@ -59,17 +59,35 @@ export default function HistoryPage() {
                 ) : (
                     <div className="space-y-4">
                         {logs.map((log: any) => (
-                            <div key={log._id} className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h3 className="font-medium text-gray-900">Product {log.productId}</h3>
-                                        <p className="text-sm text-gray-500">
-                                            Consumed on {format(new Date(log.consumedDate), 'MMM d, yyyy')}
+                            <div key={log._id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                                <div className="flex gap-4 p-4">
+                                    {/* Product Image */}
+                                    {log.productDetails?.imageUrl && (
+                                        <img
+                                            src={log.productDetails.imageUrl}
+                                            alt={log.productDetails.name}
+                                            className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
+                                        />
+                                    )}
+
+                                    {/* Product Details */}
+                                    <div className="flex-1 min-w-0">
+                                        <h3 className="font-semibold text-gray-900 text-lg truncate">
+                                            {log.productDetails?.name || `Product ${log.productId.slice(0, 8)}`}
+                                        </h3>
+                                        <p className="text-sm text-gray-600">
+                                            {log.productDetails?.brand || 'Unknown Brand'}
+                                            {log.productDetails?.flavor && ` • ${log.productDetails.flavor}`}
                                         </p>
+                                        <div className="mt-2 flex items-center gap-4 text-sm">
+                                            <span className="text-gray-500">
+                                                Consumed: {format(new Date(log.consumedDate), 'MMM d, yyyy')}
+                                            </span>
+                                            <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
+                                                Lasted {log.durationDays} days
+                                            </span>
+                                        </div>
                                     </div>
-                                    <span className="text-sm font-medium text-gray-600">
-                                        Lasted {log.durationDays} days
-                                    </span>
                                 </div>
                             </div>
                         ))}

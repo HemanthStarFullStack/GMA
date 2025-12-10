@@ -18,28 +18,103 @@ export async function POST(request: Request) {
         const aiResult = await identifyProductFromImage(image);
         console.log('✅ AI identification completed', aiResult);
 
-        // Fetch product image from web
-        console.log('🖼️ Fetching product image...');
-        const { findAndDownloadProductImage } = await import('@/lib/web-search');
+        // Fetch and verify product image from web
+        console.log('🖼️ Fetching and verifying product images...');
+        const { findProductImageUrls } = await import('@/lib/web-search');
+        const { findBestProductImage } = await import('@/lib/verify-image');
         const fs = await import('fs');
         const path = await import('path');
+        const https = await import('https');
+        const crypto = await import('crypto');
 
         // Search for "Brand + Flavor + Product Name" for better accuracy
         const searchQuery = `${aiResult.brand} ${aiResult.flavor || ''} ${aiResult.name}`.trim();
-        let imageUrl = await findAndDownloadProductImage(searchQuery);
 
-        // Fallback: If web search failed, save the user uploaded/captured image
+        let imageUrl: string | null = null;
+        let imageConfidence = 0;
+        let imageVerified = false;
+
+        // Get multiple image candidates
+        const imageUrls = await findProductImageUrls(searchQuery, 5);
+
+        if (imageUrls.length > 0) {
+            console.log(`🤖 Verifying ${imageUrls.length} images with AI...`);
+
+            // Find best match with AI verification
+            const { imageUrl: verifiedUrl, verification } = await findBestProductImage(
+                imageUrls,
+                {
+                    name: aiResult.name,
+                    brand: aiResult.brand,
+                    category: aiResult.category
+                },
+                90 // 90% confidence threshold
+            );
+
+            if (verifiedUrl && verification) {
+                console.log(`✓ Best match: ${verification.confidence}% - ${verification.reasoning}`);
+                imageConfidence = verification.confidence;
+                imageVerified = verification.confidence >= 90;
+
+                // Download the verified image
+                const downloadVerifiedImage = (url: string): Promise<string | null> => {
+                    return new Promise((resolve) => {
+                        try {
+                            const ext = path.extname(new URL(url).pathname) || '.jpg';
+                            const filename = `img_${crypto.randomBytes(4).toString('hex')}${ext}`;
+                            const relativePath = `/uploads/products/${filename}`;
+                            const fullPath = path.join(process.cwd(), 'public', 'uploads', 'products', filename);
+
+                            const dir = path.dirname(fullPath);
+                            if (!fs.existsSync(dir)) {
+                                fs.mkdirSync(dir, { recursive: true });
+                            }
+
+                            const file = fs.createWriteStream(fullPath);
+                            const request = https.get(url, (response: any) => {
+                                if (response.statusCode !== 200) {
+                                    file.close();
+                                    fs.unlink(fullPath, () => { });
+                                    resolve(null);
+                                    return;
+                                }
+                                response.pipe(file);
+                                file.on('finish', () => {
+                                    file.close();
+                                    resolve(relativePath);
+                                });
+                            });
+                            request.on('error', () => {
+                                file.close();
+                                fs.unlink(fullPath, () => { });
+                                resolve(null);
+                            });
+                            request.setTimeout(10000, () => {
+                                request.destroy();
+                                file.close();
+                                fs.unlink(fullPath, () => { });
+                                resolve(null);
+                            });
+                        } catch (error) {
+                            resolve(null);
+                        }
+                    });
+                };
+
+                imageUrl = await downloadVerifiedImage(verifiedUrl);
+            }
+        }
+
+        // Fallback: If verification failed, save the user uploaded/captured image
         if (!imageUrl) {
-            console.log('⚠️ Web image search failed, using user image as fallback.');
+            console.log('⚠️ Image verification failed, using user image as fallback.');
             try {
-                // Remove header if present (data:image/jpeg;base64,)
                 const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
                 const buffer = Buffer.from(base64Data, 'base64');
                 const filename = `user_${Date.now()}.jpg`;
                 const relativePath = `/uploads/products/${filename}`;
                 const fullPath = path.join(process.cwd(), 'public', 'uploads', 'products', filename);
 
-                // Ensure directory exists
                 const dir = path.dirname(fullPath);
                 if (!fs.existsSync(dir)) {
                     fs.mkdirSync(dir, { recursive: true });
@@ -47,6 +122,7 @@ export async function POST(request: Request) {
 
                 fs.writeFileSync(fullPath, buffer);
                 imageUrl = relativePath;
+                imageVerified = false; // User image not verified
                 console.log(`✅ Saved fallback user image: ${relativePath}`);
             } catch (err) {
                 console.error("❌ Failed to save fallback image:", err);
@@ -73,6 +149,9 @@ export async function POST(request: Request) {
                 estimated_quantity: aiResult.estimated_quantity ?? 1,
                 averageDuration: 14,
                 confidence: 0.9,
+                imageVerified,
+                imageConfidence,
+                imageSource: imageVerified ? 'web' : 'ai'
             },
         });
     } catch (error: any) {

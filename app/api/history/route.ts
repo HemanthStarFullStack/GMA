@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
-import { ConsumptionLog, Inventory } from '@/lib/models';
+import { ConsumptionLog, Inventory, Product } from '@/lib/models';
 import { auth } from '@/auth';
 
 export async function GET() {
@@ -15,11 +15,27 @@ export async function GET() {
         // Fetch logs ONLY for the logged-in user
         const logs = await ConsumptionLog.find({ userId: session.user.id })
             .sort({ consumedDate: -1 })
-            .limit(50);
+            .limit(50)
+            .lean();
+
+        // Populate product details for each log
+        const enrichedLogs = await Promise.all(logs.map(async (log) => {
+            const product = await Product.findOne({ barcode: log.productId });
+            return {
+                ...log,
+                productDetails: product ? {
+                    name: product.name,
+                    brand: product.brand,
+                    category: product.category,
+                    imageUrl: product.imageUrl,
+                    flavor: product.flavor
+                } : null
+            };
+        }));
 
         return NextResponse.json({
             success: true,
-            data: logs
+            data: enrichedLogs
         });
     } catch (error: any) {
         return NextResponse.json({
@@ -50,11 +66,10 @@ export async function POST(request: Request) {
             surveyCompleted: false
         });
 
-        // Update inventory status
-        // Ensure we only update if the user owns this inventory item
-        await Inventory.findOneAndUpdate(
-            { _id: body.inventoryId, userId: session.user.id },
-            { status: 'consumed' }
+        // Delete the inventory item (product consumed completely)
+        // Ensure we only delete if the user owns this inventory item
+        await Inventory.findOneAndDelete(
+            { _id: body.inventoryId, userId: session.user.id }
         );
 
         return NextResponse.json({

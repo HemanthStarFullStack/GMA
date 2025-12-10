@@ -70,6 +70,9 @@ export interface IProduct extends Document {
     averageDuration: number; // days
     addedBy: 'barcode' | 'ai' | 'manual';
     confidence: number;
+    imageVerified?: boolean; // NEW: If image was AI-verified
+    imageConfidence?: number; // NEW: AI verification confidence score
+    imageSource?: 'web' | 'ai' | 'manual' | null; // NEW: Where image came from
 }
 
 const ProductSchema = new Schema<IProduct>({
@@ -83,6 +86,9 @@ const ProductSchema = new Schema<IProduct>({
     averageDuration: { type: Number, default: 14 },
     addedBy: { type: String, enum: ['barcode', 'ai', 'manual'], required: true },
     confidence: { type: Number, default: 1.0 },
+    imageVerified: { type: Boolean, default: false },
+    imageConfidence: { type: Number, default: 0 },
+    imageSource: { type: String, enum: ['web', 'ai', 'manual', null], default: null }
 });
 
 // Inventory Schema
