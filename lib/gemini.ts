@@ -1,10 +1,11 @@
 // Hardcoded by request — free key, app is not public. Hardcode wins over any
 // (possibly stale) GEMINI_API_KEY in the environment so categorisation is reliable.
 const GEMINI_API_KEY = 'AIzaSyATZvOx3_u-P87Rbu_Bt_irnBze7SXZ3Qw';
-// flash-lite: faster, higher free-tier daily quota, ample for simple
-// classification. (Plain gemini-2.5-flash free tier is ~250 req/day.)
-const GEMINI_URL =
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+// Try these in order. Each model has its OWN per-minute + per-day free-tier
+// quota bucket, so when a burst of scans rate-limits the first model the
+// request spills over to the next instead of falling back to a heuristic.
+const GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
 
 // The single source of truth for product categories across the app.
 export const CATEGORIES = [
@@ -98,7 +99,7 @@ Product: ${productLine}
 JSON:`;
 }
 
-function normalizeCategory(raw?: string | null): string {
+export function normalizeCategory(raw?: string | null): string {
     if (!raw) return 'Other';
     const exact = CATEGORIES.find((c) => c.toLowerCase() === raw.trim().toLowerCase());
     if (exact) return exact;
@@ -136,12 +137,11 @@ export async function predictProductMeta(
         },
     };
 
-    // Retry transient failures (timeouts, 5xx, empty bodies) so a flaky call
-    // doesn't silently dump a product into the wrong (hint) category.
-    const ATTEMPTS = 2;
-    for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    // Walk the model list. A 429/timeout on one model immediately tries the
+    // next (separate quota bucket) rather than failing to a heuristic.
+    for (const model of GEMINI_MODELS) {
         try {
-            const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+            const res = await fetch(`${GEMINI_BASE}/${model}:generateContent?key=${GEMINI_API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
@@ -150,11 +150,8 @@ export async function predictProductMeta(
 
             if (!res.ok) {
                 const errText = await res.text().catch(() => '');
-                console.warn(`Gemini attempt ${attempt} failed: ${res.status} ${errText.slice(0, 120)}`);
-                // Back off before retrying — an immediate retry just hits the
-                // same per-minute rate-limit bucket again (429 -> 429).
-                if (attempt < ATTEMPTS) await new Promise((r) => setTimeout(r, 1200));
-                continue;
+                console.warn(`Gemini [${model}] failed: ${res.status} ${errText.slice(0, 100)}`);
+                continue; // spill over to the next model
             }
 
             const data = await res.json();
@@ -162,7 +159,7 @@ export async function predictProductMeta(
             // Extract JSON even if the model wraps it in prose or a code fence.
             const jsonMatch = rawText.match(/\{[\s\S]*\}/);
             if (!jsonMatch) {
-                console.warn(`Gemini attempt ${attempt} returned no JSON:`, rawText.slice(0, 100));
+                console.warn(`Gemini [${model}] returned no JSON:`, rawText.slice(0, 100));
                 continue;
             }
             const parsed: GeminiPrediction = JSON.parse(jsonMatch[0]);
@@ -176,11 +173,22 @@ export async function predictProductMeta(
             );
             return { averageDuration, category, predicted: true };
         } catch (err) {
-            console.warn(`Gemini attempt ${attempt} error:`, err);
+            console.warn(`Gemini [${model}] error:`, err);
         }
     }
 
-    console.warn(`Gemini failed after ${ATTEMPTS} attempts for "${name}" — using fallback ${JSON.stringify(fallback)}`);
+    // Tier 2: local Ollama model (with web_search) — only when Gemini is down /
+    // rate-limited. Skipped instantly if Ollama isn't running.
+    console.warn(`Gemini failed on all models (${GEMINI_MODELS.join(', ')}) for "${name}" — trying local LLM`);
+    try {
+        const { predictWithLocalLlm } = await import('./localLlm');
+        const local = await predictWithLocalLlm(name, brand, categoryHint, unit);
+        if (local) return local;
+    } catch (err) {
+        console.warn('Local LLM tier error:', err);
+    }
+
+    console.warn(`All predictors failed for "${name}" — using heuristic fallback ${JSON.stringify(fallback)}`);
     return fallback;
 }
 
