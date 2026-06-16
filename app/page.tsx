@@ -49,7 +49,7 @@ export default async function HomePage() {
         { href: "/inventory", label: "Inventory", note: "What you have",     Icon: Package,  tint: "text-olive" },
         { href: "/analytics", label: "Analytics", note: "Run-out forecasts", Icon: BarChart3, tint: "text-terracotta" },
         { href: "/history",   label: "History",   note: "What you've used",  Icon: History,  tint: "text-berry" },
-        { href: "/settings",  label: "Settings",  note: "Household & demo",  Icon: Settings, tint: "text-amber" },
+        { href: "/settings",  label: "Settings",  note: "Household & prefs",  Icon: Settings, tint: "text-amber" },
     ];
 
     return (

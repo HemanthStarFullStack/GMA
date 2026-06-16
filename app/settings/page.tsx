@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Save, Users, Loader2, Check, Trash2, Sparkles } from "lucide-react";
+import { ArrowLeft, Save, Users, Loader2, Check } from "lucide-react";
 
 export default function SettingsPage() {
     const [familySize, setFamilySize] = useState(1);
@@ -10,8 +10,6 @@ export default function SettingsPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
-    const [clearing, setClearing] = useState(false);
-    const [msg, setMsg] = useState<string | null>(null);
 
     useEffect(() => {
         (async () => {
@@ -45,26 +43,6 @@ export default function SettingsPage() {
             }
         } finally {
             setSaving(false);
-        }
-    };
-
-    const clearDemo = async () => {
-        if (!confirm("Remove all demo products and history? Your own scanned items stay.")) return;
-        setClearing(true);
-        setMsg(null);
-        try {
-            const res = await fetch("/api/demo", { method: "DELETE" });
-            const data = await res.json();
-            if (data.success) {
-                const r = data.removed;
-                setMsg(`Removed ${r.inventory} demo items, ${r.products} products and ${r.logs} history entries.`);
-            } else {
-                setMsg("Nothing to clear.");
-            }
-        } catch {
-            setMsg("Could not clear demo data.");
-        } finally {
-            setClearing(false);
         }
     };
 
@@ -128,26 +106,6 @@ export default function SettingsPage() {
                             </div>
                         </section>
 
-                        {/* Demo data */}
-                        <section className="pantry-card p-6 rise" style={{ animationDelay: "80ms" }}>
-                            <div className="flex items-center gap-3 mb-3">
-                                <div className="w-10 h-10 bg-amber/15 rounded-full flex items-center justify-center">
-                                    <Sparkles className="w-5 h-5 text-amber" />
-                                </div>
-                                <div>
-                                    <h2 className="font-display text-xl font-semibold text-ink">Demo data</h2>
-                                    <p className="text-sm text-ink-soft">Sample household loaded on your first visit</p>
-                                </div>
-                            </div>
-                            <p className="text-sm text-ink-soft mb-4">
-                                Done exploring? Clear the sample products and history to start fresh with your own items.
-                            </p>
-                            <button onClick={clearDemo} disabled={clearing} className="inline-flex items-center gap-2 border border-berry/30 text-berry px-4 py-2 rounded-full font-semibold hover:bg-berry/5 disabled:opacity-50">
-                                {clearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                                Clear demo data
-                            </button>
-                            {msg && <p className="text-sm text-ink-soft mt-3">{msg}</p>}
-                        </section>
                     </>
                 )}
             </main>

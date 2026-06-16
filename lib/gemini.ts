@@ -45,7 +45,9 @@ SIZE MATTERS — scale the duration with the quantity. Reference daily-use rates
 - Rice/flour/grains ~0.15 kg/day -> 1 kg = 7, 5 kg = 34, 10 kg = 45.
 - Snacks: single packet <60 g = 1; sharing pack 100-200 g = 2-3.
 - Toothpaste 100 g = 30, 200 g = 60. Detergent powder 1 kg = 30.
-- Anything finished in one sitting (single chocolate, one chips packet, one noodle packet) = 1.
+- Deodorant / body spray 150 ml = 45, 220 ml = 60. Perfume 100 ml = 120. Shampoo 180 ml = 30, 340 ml = 60. Body lotion 200 ml = 40. Hand/face wash 100 ml = 40. Soap bar 100 g = 30. Shaving cream 70 g = 45.
+- Personal-care and household DURABLES (sprays, perfumes, deodorants, lotions, creams, soaps, shampoos, razors, cosmetics) are applied in small daily doses and last WEEKS to MONTHS. NEVER treat them as single-use / 1 day.
+- Anything FOOD finished in one sitting (single chocolate, one chips packet, one noodle packet) = 1.
 
 Category list (copy one verbatim): "Dairy & Eggs", "Beverages", "Fruits & Vegetables", "Meat & Seafood", "Bakery", "Pantry", "Frozen Foods", "Snacks", "Condiments & Sauces", "Cleaning & Household", "Personal Care", "Other".
 - Rice, flour, lentils, oil, sugar, salt, spices, pasta, instant noodles -> "Pantry".
@@ -83,6 +85,10 @@ const FEW_SHOT_EXAMPLES = [
     {
         product: 'Maggi 2-Minute Noodles, 70 g packet',
         response: { unitSize: '70 g', servingsPerUnit: 1, dailyUse: 1, averageDuration: 1, category: 'Pantry', confidence: 'high' },
+    },
+    {
+        product: 'Fogg Fresh Aqua Body Spray Deodorant for Men, 150 ml',
+        response: { unitSize: '150 ml', servingsPerUnit: 90, dailyUse: 2, averageDuration: 45, category: 'Personal Care', confidence: 'high' },
     },
 ];
 

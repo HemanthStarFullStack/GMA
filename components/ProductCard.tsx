@@ -29,7 +29,10 @@ export default function ProductCard({ item, onConsume, onDelete }: ProductCardPr
                     {product.brand && (
                         <p className="kicker mb-0.5 truncate">{product.brand}</p>
                     )}
-                    <h3 className="font-display text-lg font-semibold text-ink leading-tight line-clamp-2">
+                    <h3
+                        className="font-display text-lg font-semibold text-ink leading-tight truncate"
+                        title={product.flavor || product.name || "Unknown Product"}
+                    >
                         {product.flavor || product.name || "Unknown Product"}
                     </h3>
                     <div className="mt-1.5 flex items-center gap-2">
