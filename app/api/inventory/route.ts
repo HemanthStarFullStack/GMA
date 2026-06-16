@@ -23,7 +23,7 @@ export async function GET() {
             const product = productMap.get(item.productId);
             return {
                 ...item,
-                product: product || { name: 'Unknown Product', brand: '', imageUrl: null, averageDuration: 14 },
+                product: product || { name: 'Unknown Product', brand: '', imageUrl: null, category: 'Other', averageDuration: 14 },
             };
         });
 
@@ -55,25 +55,33 @@ export async function POST(request: Request) {
         // entry's good data — only fill in fields on first insert.
         const d = body.productDetails;
         if (d) {
-            await Product.findOneAndUpdate(
-                { barcode },
-                {
-                    $setOnInsert: {
-                        barcode,
-                        name: d.name || 'Unknown Product',
-                        brand: d.brand || '',
-                        flavor: d.flavor || '',
-                        category: d.category || 'Other',
-                        imageUrl: d.imageUrl || null,
-                        defaultUnit: d.unit || 'units',
-                        averageDuration: d.averageDuration || 14,
-                        addedBy: d.addedBy || 'barcode',
-                        source: d.source || 'barcode',
-                        isDemo: false,
-                    },
-                },
-                { upsert: true, new: true },
-            );
+            const setOnInsert: Record<string, unknown> = {
+                barcode,
+                name: d.name || 'Unknown Product',
+                brand: d.brand || '',
+                flavor: d.flavor || '',
+                imageUrl: d.imageUrl || null,
+                defaultUnit: d.unit || 'units',
+                averageDuration: d.averageDuration || 14,
+                // User-entered details (manual add / confirmed form) are trusted,
+                // so don't let the cache-healing step overwrite them with AI.
+                aiPredicted: true,
+                addedBy: d.addedBy || 'barcode',
+                source: d.source || 'barcode',
+                isDemo: false,
+            };
+
+            // The category the user confirmed on the scan/manual form is
+            // authoritative — always $set it so it overwrites any stale cached
+            // value (e.g. a wrong category cached before this fix).
+            const update: Record<string, unknown> = { $setOnInsert: setOnInsert };
+            if (d.category) {
+                update.$set = { category: d.category };
+            } else {
+                setOnInsert.category = 'Other';
+            }
+
+            await Product.findOneAndUpdate({ barcode }, update, { upsert: true, new: true });
         }
 
         const qty = body.quantity || 1;

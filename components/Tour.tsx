@@ -20,13 +20,13 @@ export default function Tour({ run, onFinish }: { run: boolean; onFinish: () => 
         const steps: any[] = [
             {
                 popover: {
-                    title: "Welcome to SINTI 👋",
+                    title: "Welcome to GMA 👋",
                     description: "We've loaded a sample pantry so you can see it in action. Here's a quick 30-second tour.",
                 },
             },
         ];
         if (has("#tour-grid")) steps.push({ element: "#tour-grid", popover: { title: "Your inventory", description: "Everything you have at home, at a glance." } });
-        if (has('[data-tour="consume"]')) steps.push({ element: '[data-tour="consume"]', popover: { title: "Mark things consumed", description: "Run out of something? Mark it consumed — SINTI learns how fast you use it." } });
+        if (has('[data-tour="consume"]')) steps.push({ element: '[data-tour="consume"]', popover: { title: "Mark things consumed", description: "Run out of something? Mark it consumed — GMA learns how fast you use it." } });
         if (has("#tour-analytics")) steps.push({ element: "#tour-analytics", popover: { title: "Run-out forecasts", description: "Analytics turns your habits into predictions, so you restock before you're empty." } });
         if (has("#tour-scan")) steps.push({ element: "#tour-scan", popover: { title: "Add your own", description: "Scan a barcode or add manually — new products are remembered for next time." } });
         steps.push({

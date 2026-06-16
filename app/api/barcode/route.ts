@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { Product } from '@/lib/models';
-import { predictConsumptionDays } from '@/lib/gemini';
+import { predictProductMeta } from '@/lib/gemini';
 
 /**
  * Barcode Lookup Service (no AI).
@@ -49,9 +49,27 @@ export async function GET(request: Request) {
 
         await connectDB();
 
-        // 1. CACHE FIRST — self-learning local catalogue.
+        // 1. CACHE FIRST — shared, self-learning catalogue (the "RAG" store).
+        //    Any product any account has already resolved lives here, so a
+        //    repeat scan (by anyone) costs zero AI calls.
         const cached = await Product.findOne({ barcode });
         if (cached) {
+            // If a prior scan only got a heuristic fallback (e.g. it was cached
+            // during a Gemini outage / rate-limit), heal it now with a real
+            // prediction so every future scan — for every account — is correct.
+            let averageDuration = cached.averageDuration ?? 14;
+            let category = cached.category || 'Other';
+            if (!cached.aiPredicted) {
+                const meta = await predictProductMeta(cached.name, cached.brand || '', category, cached.defaultUnit || 'units');
+                if (meta.predicted) {
+                    averageDuration = meta.averageDuration;
+                    category = meta.category;
+                    Product.updateOne(
+                        { barcode },
+                        { $set: { averageDuration, category, aiPredicted: true } },
+                    ).catch((err: unknown) => console.warn('Cache heal failed:', err));
+                }
+            }
             return NextResponse.json({
                 success: true,
                 source: 'cache',
@@ -60,9 +78,10 @@ export async function GET(request: Request) {
                     name: cached.name,
                     brand: cached.brand || '',
                     flavor: cached.flavor || '',
-                    category: cached.category || 'Other',
+                    category,
                     imageUrl: cached.imageUrl || null,
                     unit: cached.defaultUnit || 'units',
+                    averageDuration,
                 },
             });
         }
@@ -131,12 +150,15 @@ export async function GET(request: Request) {
             // data to the same key so inventory productId stays consistent.
             productData.barcode = barcode;
 
-            const averageDuration = await predictConsumptionDays(
+            // Gemini decides both the realistic shelf-life and the category;
+            // the DB's category guess is only a fallback hint.
+            const { averageDuration, category, predicted } = await predictProductMeta(
                 productData.name,
                 productData.brand || '',
                 productData.category,
                 productData.unit || 'units',
             );
+            productData.category = category;
 
             Product.findOneAndUpdate(
                 { barcode },
@@ -146,10 +168,11 @@ export async function GET(request: Request) {
                         name: productData.name,
                         brand: productData.brand || '',
                         flavor: productData.flavor || '',
-                        category: productData.category,
+                        category,
                         imageUrl: productData.imageUrl || null,
                         defaultUnit: productData.unit || 'units',
                         averageDuration,
+                        aiPredicted: predicted,
                         addedBy: 'barcode',
                         source,
                         isDemo: false,

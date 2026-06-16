@@ -20,8 +20,26 @@ interface InventoryItem {
         brand: string;
         imageUrl: string | null;
         flavor?: string;
+        category?: string;
         averageDuration?: number;
     };
+}
+
+// Group the fine-grained scan categories into intuitive pantry shelves.
+const SECTIONS: { title: string; cats: string[] }[] = [
+    { title: "Staples", cats: ["Pantry", "Bakery"] },
+    { title: "Fresh", cats: ["Fruits & Vegetables", "Dairy & Eggs", "Meat & Seafood"] },
+    { title: "Snacks", cats: ["Snacks"] },
+    { title: "Drinks", cats: ["Beverages"] },
+    { title: "Frozen", cats: ["Frozen Foods"] },
+    { title: "Condiments", cats: ["Condiments & Sauces"] },
+    { title: "Household", cats: ["Cleaning & Household", "Personal Care"] },
+];
+const SECTION_ORDER = [...SECTIONS.map((s) => s.title), "Other"];
+
+function sectionFor(category?: string): string {
+    const c = (category || "Other").trim();
+    return SECTIONS.find((s) => s.cats.includes(c))?.title ?? "Other";
 }
 
 export default function InventoryPage() {
@@ -170,10 +188,25 @@ export default function InventoryPage() {
                         </Link>
                     </div>
                 ) : (
-                    <div id="tour-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {items.map((item) => (
-                            <ProductCard key={item._id} item={item} onConsume={handleConsume} onDelete={handleDelete} />
-                        ))}
+                    <div id="tour-grid" className="space-y-10">
+                        {SECTION_ORDER.map((title) => {
+                            const group = items.filter((item) => sectionFor(item.product?.category) === title);
+                            if (group.length === 0) return null;
+                            return (
+                                <section key={title} className="rise">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <h2 className="font-display text-xl font-semibold text-ink">{title}</h2>
+                                        <span className="pill bg-paper-2 text-ink-soft">{group.length}</span>
+                                        <span className="flex-1 h-px bg-line" />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {group.map((item) => (
+                                            <ProductCard key={item._id} item={item} onConsume={handleConsume} onDelete={handleDelete} />
+                                        ))}
+                                    </div>
+                                </section>
+                            );
+                        })}
                     </div>
                 )}
             </main>

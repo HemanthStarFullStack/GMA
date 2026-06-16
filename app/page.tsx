@@ -56,8 +56,8 @@ export default async function HomePage() {
         <div className="min-h-screen">
             <header className="container mx-auto px-5 py-6 flex items-center justify-between">
                 <div className="flex items-baseline gap-2">
-                    <span className="font-display text-2xl font-semibold text-ink tracking-tight">SINTI</span>
-                    <span className="hidden sm:inline text-xs text-ink-faint">· smart pantry</span>
+                    <span className="font-display text-2xl font-semibold text-ink tracking-tight">GMA</span>
+                    <span className="hidden sm:inline text-xs text-ink-faint">· grocery management</span>
                 </div>
                 {session ? (
                     <UserMenu />
@@ -74,7 +74,7 @@ export default async function HomePage() {
                             Restock <span className="italic text-primary">before</span> you run&nbsp;out.
                         </h1>
                         <p className="mt-6 text-lg text-ink-soft max-w-xl">
-                            Scan your groceries, track what's in the house, and let SINTI learn your rhythm —
+                            Scan your groceries, track what's in the house, and let GMA learn your rhythm —
                             so you know what's running low before the shelf is empty.
                         </p>
 
@@ -117,8 +117,7 @@ export default async function HomePage() {
             </main>
 
             <footer className="border-t border-line">
-                <div className="container mx-auto px-5 py-6 text-sm text-ink-faint flex flex-wrap items-center justify-between gap-2">
-                    <span>SINTI — a portfolio project. AI-free by design.</span>
+                <div className="container mx-auto px-5 py-6 text-sm text-ink-faint flex items-center justify-center gap-2">
                     <span className="font-display italic">Scan · track · restock</span>
                 </div>
             </footer>

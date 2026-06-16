@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server';
-import { predictConsumptionDays } from '@/lib/gemini';
+import { predictProductMeta } from '@/lib/gemini';
 
-export async function GET() {
-    const keySet = !!process.env.GEMINI_API_KEY;
-    const keyPrefix = process.env.GEMINI_API_KEY?.slice(0, 8) ?? 'not set';
-    const days = await predictConsumptionDays("Lays Classic Salted Chips", "Lays", "Snacks", "26g packet");
-    return NextResponse.json({ keySet, keyPrefix, predictedDays: days });
+// Quick sanity check for category/duration prediction.
+//   /api/admin/debug-gemini?name=...&brand=...&unit=...&category=<hint>
+export async function GET(request: Request) {
+    const { searchParams } = new URL(request.url);
+    const name = searchParams.get('name') || 'Lays Classic Salted Chips';
+    const brand = searchParams.get('brand') || 'Lays';
+    const category = searchParams.get('category') || '';
+    const unit = searchParams.get('unit') || '26g packet';
+
+    const meta = await predictProductMeta(name, brand, category, unit);
+    return NextResponse.json({ input: { name, brand, category, unit }, meta });
 }

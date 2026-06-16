@@ -178,11 +178,25 @@ export default function ScanPage() {
                             <div className="min-w-0">
                                 {found.brand && <p className="kicker">{found.brand}</p>}
                                 <h2 className="font-display text-xl font-semibold text-ink leading-tight">{found.name}</h2>
-                                <p className="text-sm text-ink-soft mt-1">{found.category}</p>
                                 <span className="inline-block mt-2 pill bg-olive/10 text-olive">
                                     {found.source === "cache" ? "from your library" : `via ${found.source}`}
                                 </span>
                             </div>
+                        </div>
+
+                        <div className="px-5 pb-3">
+                            <label className="block">
+                                <span className="block text-xs font-semibold text-ink-soft mb-1">
+                                    Category <span className="text-ink-faint font-normal">· suggested by AI, adjust if needed</span>
+                                </span>
+                                <select
+                                    value={found.category}
+                                    onChange={(e) => setFound({ ...found, category: e.target.value })}
+                                    className={inputCls}
+                                >
+                                    {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                                </select>
+                            </label>
                         </div>
 
                         <div className="px-5 pb-2 flex items-center justify-between">

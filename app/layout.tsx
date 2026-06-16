@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SINTI — Smart Inventory Tracking",
+  title: "GMA — Grocery Management Application",
   description: "Scan groceries, track your household inventory, and get warned before you run out.",
 };
 
