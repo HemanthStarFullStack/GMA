@@ -16,7 +16,8 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Pull latest and redeploy
-        shell: pwsh
+        # Use Windows PowerShell (always present on the runner); pwsh/Core may not be installed.
+        shell: powershell
         run: |
           Set-Location "C:\Users\91834\Desktop\GMA"
           git fetch origin main
