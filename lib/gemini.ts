@@ -1,160 +1,122 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_URL =
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
-const apiKey = process.env.GEMINI_API_KEY;
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+type GeminiPrediction = {
+    averageDuration: number;
+    confidence: 'high' | 'medium' | 'low';
+    reasoning: string;
+};
 
-// Available models (Feb 2026) - from https://ai.google.dev/gemini-api/docs/models
-const MODELS_TO_TRY = [
-    "gemini-2.5-flash",           // Stable - best price-performance
-    "gemini-3-flash-preview",     // Preview - newest
-    "gemini-2.5-flash-preview-09-2025"  // Preview fallback
+const SYSTEM_INSTRUCTION = `You are a household grocery consumption analyst.
+Your job is to predict how many whole days ONE person takes to consume ONE purchased unit of a grocery product under normal daily-life usage patterns.
+
+Rules:
+- Return a WHOLE NUMBER (integer) of days, minimum 1. Never return fractions or decimals.
+- Anything finished in one sitting or within the same day = 1.
+- A single-serve snack (chips packet, biscuit packet, candy bar) = 1 day.
+- A 1L milk carton = 3 days.
+- A 10kg flour bag = 45 days.
+- A 200g toothpaste tube = 60 days.
+- Soft drinks 1L = 2 days. Soft drinks 2L = 4 days.
+- Cooking oil 1L = 30 days. Cooking oil 5L = 90 days.
+- Instant noodle packet = 1 day.
+- Return ONLY valid JSON. No text outside the JSON object.`;
+
+const FEW_SHOT_EXAMPLES = [
+    {
+        product: 'Lays Classic Salted Chips, Snacks, 26g packet',
+        response: { averageDuration: 1, confidence: 'high', reasoning: 'Single-serve snack packet consumed in one sitting.' },
+    },
+    {
+        product: 'Amul Toned Milk, Dairy & Eggs, 1 litre carton',
+        response: { averageDuration: 3, confidence: 'high', reasoning: '1L milk is used over 2-4 days for daily tea, coffee, or cereal.' },
+    },
+    {
+        product: 'Aashirvaad Atta Whole Wheat Flour, Pantry, 10 kg bag',
+        response: { averageDuration: 45, confidence: 'medium', reasoning: '10kg flour lasts a single person roughly 6-7 weeks of daily cooking.' },
+    },
+    {
+        product: 'Colgate Strong Teeth Toothpaste, Personal Care, 200g tube',
+        response: { averageDuration: 60, confidence: 'high', reasoning: 'A 200g toothpaste tube typically lasts one person about 2 months.' },
+    },
+    {
+        product: 'Maggi 2-Minute Noodles, Pantry, 70g packet',
+        response: { averageDuration: 1, confidence: 'high', reasoning: 'A single Maggi packet is one meal — consumed immediately.' },
+    },
+    {
+        product: 'Fortune Sunflower Oil, Pantry, 1 litre bottle',
+        response: { averageDuration: 30, confidence: 'medium', reasoning: '1L cooking oil is used across daily meals and lasts about a month.' },
+    },
 ];
 
-// Helper to generate content with timeout
-async function generateWithTimeout(model: any, contents: any[], timeoutMs: number = 20000) {
-    const resultPromise = model.generateContent(contents);
-    const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs}ms`)), timeoutMs)
-    );
-    return Promise.race([resultPromise, timeoutPromise]);
+function buildPrompt(name: string, brand: string, category: string, unit: string): string {
+    const examples = FEW_SHOT_EXAMPLES.map(
+        (e) => `Product: ${e.product}\nJSON: ${JSON.stringify(e.response)}`,
+    ).join('\n\n');
+
+    const productLine = [name, brand, category, unit].filter(Boolean).join(', ');
+
+    return `${examples}
+
+Product: ${productLine}
+JSON:`;
 }
 
-export async function identifyProductFromImage(base64Image: string) {
-    if (!genAI) {
-        throw new Error("Gemini API Key is missing. Please configure GEMINI_API_KEY in .env.local");
-    }
-
-    // Remove the data URL prefix if present
-    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
-
-    // Detect MIME type from base64 prefix if available
-    let mimeType = "image/jpeg";
-    if (base64Image.startsWith("data:image/png")) {
-        mimeType = "image/png";
-    } else if (base64Image.startsWith("data:image/webp")) {
-        mimeType = "image/webp";
-    } else if (base64Image.startsWith("data:image/gif")) {
-        mimeType = "image/gif";
-    }
-
-    const prompt = `You are an expert grocery product identifier. Look at this image and identify the product.
-
-TASK: Identify this grocery/food/household product from the image.
-
-IMPORTANT RULES:
-1. If you can see ANY product (food, drink, snack, household item), identify it
-2. Even if the image is blurry or partial, make your best guess
-3. Use visible text, logos, colors, and packaging to identify
-4. If brand is not visible, guess based on packaging style or say "Generic"
-5. NEVER return an error if you can see ANY product
-
-RESPOND IN THIS EXACT JSON FORMAT:
-{
-  "name": "Product Name (be specific, e.g. 'Doritos Nacho Cheese Chips')",
-  "brand": "Brand Name (e.g. 'Doritos', 'Nestle', 'Generic')",
-  "flavor": "Flavor/Variant if applicable (e.g. 'Nacho Cheese', 'Vanilla', '')",
-  "category": "Category (Dairy & Eggs | Beverages | Fruits & Vegetables | Meat & Seafood | Bakery | Pantry | Frozen Foods | Snacks | Condiments & Sauces | Cleaning & Household | Personal Care | Other)",
-  "estimated_quantity": 1,
-  "unit": "units"
-}
-
-ONLY return the JSON object, no other text.`;
-
-    const imagePart = {
-        inlineData: {
-            data: base64Data,
-            mimeType: mimeType,
-        },
-    };
-
-    let lastError: Error | null = null;
-    let text = "";
-
-    // Try each model in order
-    for (const modelName of MODELS_TO_TRY) {
-        try {
-            console.log(`🤖 Trying model: ${modelName}...`);
-            const model = genAI.getGenerativeModel({ model: modelName });
-            const result: any = await generateWithTimeout(model, [prompt, imagePart], 25000);
-            const response = await result.response;
-            text = response.text();
-
-            if (text && text.trim()) {
-                console.log(`✅ Success with model: ${modelName}`);
-                break;
-            }
-        } catch (error: any) {
-            console.error(`❌ Model ${modelName} failed:`);
-            console.error(`   Message: ${error.message}`);
-            if (error.errorDetails) console.error(`   Details:`, JSON.stringify(error.errorDetails));
-            lastError = error;
-            // Continue to next model
-        }
-    }
-
-    if (!text || !text.trim()) {
-        throw new Error(lastError?.message || "All AI models failed to respond");
-    }
-
-    console.log("📝 AI Response:", text.substring(0, 200) + "...");
-
-    // Parse JSON from response
-    let jsonString = text.trim();
-
-    // Remove markdown code blocks if present
-    jsonString = jsonString.replace(/```json\s*/gi, "").replace(/```\s*/gi, "");
-
-    // Extract JSON object
-    const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-        jsonString = jsonMatch[0];
-    }
+export async function predictConsumptionDays(
+    name: string,
+    brand: string,
+    category: string,
+    unit: string,
+): Promise<number> {
+    if (!GEMINI_API_KEY) return 14;
 
     try {
-        const parsedResult = JSON.parse(jsonString);
-
-        // Check for explicit error from AI
-        if (parsedResult.error) {
-            throw new Error(parsedResult.error);
-        }
-
-        // Validate required fields with fallbacks
-        const result = {
-            name: parsedResult.name || "Unknown Product",
-            brand: parsedResult.brand || "Generic",
-            flavor: parsedResult.flavor || "",
-            category: parsedResult.category || "Other",
-            estimated_quantity: parsedResult.estimated_quantity || 1,
-            unit: parsedResult.unit || "units",
-            confidence: 0.85 // AI-identified confidence
+        const body = {
+            system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+            contents: [{ role: 'user', parts: [{ text: buildPrompt(name, brand, category, unit) }] }],
+            generationConfig: {
+                response_mime_type: 'application/json',
+                temperature: 0.1,
+                maxOutputTokens: 256,
+                // Disable extended thinking — it adds prose before the JSON and
+                // blows past the JSON-mode contract on gemini-2.5-flash.
+                thinkingConfig: { thinkingBudget: 0 },
+            },
         };
 
-        // Ensure name is not empty
-        if (!result.name || result.name === "Unknown Product") {
-            throw new Error("Could not identify product name from image");
+        const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(8000),
+        });
+
+        if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            console.warn(`Gemini prediction failed: ${res.status} ${errText}`);
+            return 14;
         }
 
-        console.log("✅ Parsed product:", result);
-        return result;
-
-    } catch (parseError: any) {
-        console.error("❌ JSON Parse Error:", parseError.message);
-        console.error("Raw text was:", text);
-
-        // Try to extract basic info from text if JSON fails
-        const nameMatch = text.match(/name['":\s]+([^"'\n,}]+)/i);
-        if (nameMatch) {
-            return {
-                name: nameMatch[1].trim(),
-                brand: "Unknown",
-                flavor: "",
-                category: "Other",
-                estimated_quantity: 1,
-                unit: "units",
-                confidence: 0.5
-            };
+        const data = await res.json();
+        const rawText: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+        // Extract JSON even if the model wraps it in prose or a code fence.
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            console.warn('Gemini returned no JSON:', rawText.slice(0, 100));
+            return 14;
         }
+        const parsed: GeminiPrediction = JSON.parse(jsonMatch[0]);
 
-        throw new Error("AI could not identify the product. Please try a clearer image.");
+        const days = Math.max(1, Math.round(parsed.averageDuration));
+        if (!Number.isFinite(days)) return 14;
+
+        console.log(
+            `Gemini predicted ${days}d for "${name}" (${parsed.confidence}) — ${parsed.reasoning}`,
+        );
+        return days;
+    } catch (err) {
+        console.warn('Gemini consumption prediction error:', err);
+        return 14;
     }
 }

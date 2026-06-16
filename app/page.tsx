@@ -1,125 +1,127 @@
 import Link from "next/link";
-import { Camera, Package, History, Settings, BarChart3, LogIn, ArrowRight } from "lucide-react";
+import { Camera, Package, History, Settings, BarChart3, ArrowRight } from "lucide-react";
 import { auth } from "@/auth";
+import UserMenu from "@/components/UserMenu";
+import HeroCard, { type HeroItem } from "@/components/HeroCard";
+import connectDB from "@/lib/mongodb";
+import { Inventory, Product } from "@/lib/models";
+
+async function getHeroItems(userId: string): Promise<HeroItem[]> {
+    await connectDB();
+
+    const invItems = await Inventory.find({ userId, status: "active" })
+        .sort({ quantity: 1 })
+        .limit(8)
+        .lean();
+
+    if (invItems.length === 0) return [];
+
+    const barcodes = invItems.map((i) => i.productId);
+    const products = await Product.find({ barcode: { $in: barcodes } }).lean();
+    const prodMap = new Map(products.map((p) => [p.barcode, p]));
+
+    const now = Date.now();
+    const items: HeroItem[] = invItems.map((item) => {
+        const prod = prodMap.get(item.productId);
+        const daysSince = Math.floor((now - new Date(item.purchaseDate).getTime()) / 86_400_000);
+        const totalDays = item.quantity * (prod?.averageDuration ?? 14);
+        const daysLeft = Math.max(0, totalDays - daysSince);
+        return {
+            name: prod?.name ?? "Unknown Product",
+            brand: prod?.brand ?? "",
+            quantity: item.quantity,
+            unit: item.unit,
+            daysLeft,
+        };
+    });
+
+    // Most urgent first; cap at 5 for the carousel
+    return items.sort((a, b) => a.daysLeft - b.daysLeft).slice(0, 5);
+}
 
 export default async function HomePage() {
-  const session = await auth();
+    const session = await auth();
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-700">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <header className="text-center mb-12 relative">
-          <div className="absolute top-0 right-0 flex gap-4">
-            {session ? (
-              <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-4 py-2 rounded-full">
-                {session.user?.image && (
-                  <img src={session.user.image} alt="User" className="w-8 h-8 rounded-full border-2 border-white" />
+    const heroItems = session?.user?.id ? await getHeroItems(session.user.id) : [];
+    const isGuest = !session?.user;
+
+    const tiles = [
+        { href: "/inventory", label: "Inventory", note: "What you have",     Icon: Package,  tint: "text-olive" },
+        { href: "/analytics", label: "Analytics", note: "Run-out forecasts", Icon: BarChart3, tint: "text-terracotta" },
+        { href: "/history",   label: "History",   note: "What you've used",  Icon: History,  tint: "text-berry" },
+        { href: "/settings",  label: "Settings",  note: "Household & demo",  Icon: Settings, tint: "text-amber" },
+    ];
+
+    return (
+        <div className="min-h-screen">
+            <header className="container mx-auto px-5 py-6 flex items-center justify-between">
+                <div className="flex items-baseline gap-2">
+                    <span className="font-display text-2xl font-semibold text-ink tracking-tight">SINTI</span>
+                    <span className="hidden sm:inline text-xs text-ink-faint">· smart pantry</span>
+                </div>
+                {session ? (
+                    <UserMenu />
+                ) : (
+                    <Link href="/login" className="btn-ghost px-4 py-2 text-sm">Sign in</Link>
                 )}
-                <span className="text-white font-medium">{session.user?.name}</span>
-              </div>
-            ) : (
-              <Link
-                href="/login"
-                className="flex items-center gap-2 bg-white text-blue-600 px-4 py-2 rounded-full font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
-              >
-                <LogIn className="w-4 h-4" />
-                Sign In
-              </Link>
-            )}
-          </div>
+            </header>
 
-          <h1 className="text-5xl font-bold text-white mb-4 pt-10">
-            🛒 SINTI V2
-          </h1>
-          <p className="text-xl text-purple-100">
-            Smart Inventory Tracking with AI
-          </p>
-        </header>
+            <main className="container mx-auto px-5">
+                <section className="pt-10 pb-14 grid lg:grid-cols-12 gap-10 items-center">
+                    <div className="lg:col-span-7 rise">
+                        <p className="kicker mb-4">Know your kitchen</p>
+                        <h1 className="font-display text-ink text-5xl sm:text-6xl lg:text-7xl font-semibold leading-[0.98]">
+                            Restock <span className="italic text-primary">before</span> you run&nbsp;out.
+                        </h1>
+                        <p className="mt-6 text-lg text-ink-soft max-w-xl">
+                            Scan your groceries, track what's in the house, and let SINTI learn your rhythm —
+                            so you know what's running low before the shelf is empty.
+                        </p>
 
-        {/* Main Action */}
-        <div className="max-w-2xl mx-auto mb-12">
-          {session ? (
-            <Link
-              href="/scan"
-              className="block bg-white hover:bg-gray-50 rounded-2xl shadow-2xl p-12 text-center transition-all hover:scale-105 duration-200"
-            >
-              <Camera className="w-24 h-24 mx-auto mb-6 text-purple-600" />
-              <h2 className="text-3xl font-bold text-gray-900 mb-3">
-                Scan Product
-              </h2>
-              <p className="text-gray-600 text-lg">
-                Use your camera to scan barcodes instantly
-              </p>
-            </Link>
-          ) : (
-            <Link
-              href="/login"
-              className="block bg-white hover:bg-gray-50 rounded-2xl shadow-2xl p-12 text-center transition-all hover:scale-105 duration-200"
-            >
-              <LogIn className="w-24 h-24 mx-auto mb-6 text-blue-600" />
-              <h2 className="text-3xl font-bold text-gray-900 mb-3">
-                Sign In to Start
-              </h2>
-              <p className="text-gray-600 text-lg flex items-center justify-center gap-2">
-                Create your account to track inventory <ArrowRight className="w-5 h-5" />
-              </p>
-            </Link>
-          )}
+                        <div className="mt-8 flex flex-wrap items-center gap-3">
+                            <Link
+                                href={session ? "/scan" : "/login"}
+                                className="btn-primary px-6 py-3.5 inline-flex items-center gap-2 text-base shadow-lg"
+                            >
+                                <Camera className="w-5 h-5" />
+                                {session ? "Scan a product" : "Get started"}
+                                <ArrowRight className="w-4 h-4" />
+                            </Link>
+                            <Link href="/inventory" className="btn-ghost px-6 py-3.5 inline-flex items-center gap-2 text-base">
+                                View inventory
+                            </Link>
+                        </div>
+                    </div>
 
+                    <div className="lg:col-span-5 rise" style={{ animationDelay: "120ms" }}>
+                        <HeroCard items={heroItems} isGuest={isGuest} />
+                    </div>
+                </section>
+
+                <section className="pb-20">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        {tiles.map(({ href, label, note, Icon, tint }, i) => (
+                            <Link
+                                key={href}
+                                href={href}
+                                className="pantry-card p-6 group hover:-translate-y-0.5 transition-transform rise"
+                                style={{ animationDelay: `${180 + i * 60}ms` }}
+                            >
+                                <Icon className={`w-8 h-8 ${tint}`} strokeWidth={1.6} />
+                                <h3 className="font-display text-xl font-semibold text-ink mt-4">{label}</h3>
+                                <p className="text-sm text-ink-soft">{note}</p>
+                            </Link>
+                        ))}
+                    </div>
+                </section>
+            </main>
+
+            <footer className="border-t border-line">
+                <div className="container mx-auto px-5 py-6 text-sm text-ink-faint flex flex-wrap items-center justify-between gap-2">
+                    <span>SINTI — a portfolio project. AI-free by design.</span>
+                    <span className="font-display italic">Scan · track · restock</span>
+                </div>
+            </footer>
         </div>
-
-        {/* Quick Actions Grid */}
-        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Link
-            href="/inventory"
-            className="bg-white/10 backdrop-blur-md hover:bg-white/20 rounded-xl p-6 text-center transition-all hover:scale-105"
-          >
-            <Package className="w-12 h-12 mx-auto mb-3 text-white" />
-            <h3 className="font-semibold text-white">Inventory</h3>
-          </Link>
-
-          <Link
-            href="/history"
-            className="bg-white/10 backdrop-blur-md hover:bg-white/20 rounded-xl p-6 text-center transition-all hover:scale-105"
-          >
-            <History className="w-12 h-12 mx-auto mb-3 text-white" />
-            <h3 className="font-semibold text-white">History</h3>
-          </Link>
-
-          <Link
-            href="/analytics"
-            className="bg-white/10 backdrop-blur-md hover:bg-white/20 rounded-xl p-6 text-center transition-all hover:scale-105"
-          >
-            <BarChart3 className="w-12 h-12 mx-auto mb-3 text-white" />
-            <h3 className="font-semibold text-white">Analytics</h3>
-          </Link>
-
-          <Link
-            href="/settings"
-            className="bg-white/10 backdrop-blur-md hover:bg-white/20 rounded-xl p-6 text-center transition-all hover:scale-105"
-          >
-            <Settings className="w-12 h-12 mx-auto mb-3 text-white" />
-            <h3 className="font-semibold text-white">Settings</h3>
-          </Link>
-        </div>
-
-        {/* Stats Preview */}
-        <div className="max-w-4xl mx-auto mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 text-center">
-            <div className="text-4xl font-bold text-white mb-2">0</div>
-            <div className="text-purple-100">Items Tracked</div>
-          </div>
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 text-center">
-            <div className="text-4xl font-bold text-white mb-2">0</div>
-            <div className="text-purple-100">Products Scanned</div>
-          </div>
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 text-center">
-            <div className="text-4xl font-bold text-white mb-2">-</div>
-            <div className="text-purple-100">Family Size</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+    );
 }

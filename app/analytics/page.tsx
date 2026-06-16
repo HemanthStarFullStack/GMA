@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Package, Clock, TrendingDown, Check, X } from "lucide-react";
+import { ArrowLeft, Package, Clock, TrendingDown, Check, X, AlertTriangle, Loader2 } from "lucide-react";
 import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
 
@@ -31,236 +31,166 @@ interface Product {
 
 export default function AnalyticsPage() {
     const [products, setProducts] = useState<Product[]>([]);
-    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [selected, setSelected] = useState<Product | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        loadAnalytics();
+        (async () => {
+            try {
+                const res = await fetch('/api/analytics');
+                const json = await res.json();
+                if (json.success) {
+                    setProducts(json.data.products || []);
+                    if (json.data.products?.length) setSelected(json.data.products[0]);
+                }
+            } catch (error) {
+                console.error('Failed to load analytics:', error);
+            } finally {
+                setLoading(false);
+            }
+        })();
     }, []);
 
-    const loadAnalytics = async () => {
-        try {
-            const res = await fetch('/api/analytics');
-            const json = await res.json();
-            if (json.success) {
-                setProducts(json.data.products || []);
-                if (json.data.products && json.data.products.length > 0) {
-                    setSelectedProduct(json.data.products[0]);
-                }
-            }
-        } catch (error) {
-            console.error('Failed to load analytics:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    if (loading) {
-        return (
-            <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-            </div>
-        );
-    }
-
     return (
-        <div className="min-h-screen bg-gray-900">
-            {/* Header */}
-            <div className="bg-gray-800 border-b border-gray-700">
-                <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2 text-white hover:text-gray-300">
+        <div className="min-h-screen">
+            <header className="bg-paper/85 backdrop-blur border-b border-line sticky top-0 z-10">
+                <div className="container mx-auto px-5 py-4 flex items-center justify-between">
+                    <Link href="/" className="flex items-center gap-2 text-ink-soft hover:text-ink">
                         <ArrowLeft className="w-5 h-5" />
                         <span className="font-medium">Back</span>
                     </Link>
-                    <h1 className="text-xl font-bold text-white">Product Analytics</h1>
-                    <div className="flex justify-end min-w-[3rem]">
-                        <UserMenu />
-                    </div>
+                    <h1 className="font-display text-2xl font-semibold text-ink">Analytics</h1>
+                    <UserMenu />
                 </div>
-            </div>
+            </header>
 
-            <div className="container mx-auto px-4 py-6">
-                {products.length === 0 ? (
-                    <div className="bg-gray-800 rounded-xl border border-gray-700 p-12 text-center">
-                        <Package className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                        <h3 className="text-xl font-semibold text-gray-400 mb-2">No Products Yet</h3>
-                        <p className="text-gray-500">Scan some products to see analytics</p>
+            <main className="container mx-auto px-5 py-8">
+                {loading ? (
+                    <div className="flex justify-center py-24"><Loader2 className="w-9 h-9 animate-spin text-terracotta" /></div>
+                ) : products.length === 0 ? (
+                    <div className="pantry-card p-12 text-center max-w-lg mx-auto rise">
+                        <Package className="w-14 h-14 text-ink-faint mx-auto mb-4" strokeWidth={1.5} />
+                        <h3 className="font-display text-2xl font-semibold text-ink mb-2">Nothing to analyse yet</h3>
+                        <p className="text-ink-soft">Scan products and mark them consumed to build forecasts.</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Product List - Left Panel */}
+                        {/* List */}
                         <div className="lg:col-span-1">
-                            <div className="bg-gray-800 rounded-xl border border-gray-700 p-4 sticky top-4">
-                                <h2 className="text-lg font-bold text-white mb-4">
-                                    All Products ({products.length})
-                                </h2>
-                                <div className="space-y-2 max-h-[calc(100vh-200px)] overflow-y-auto">
-                                    {products.map((product) => (
-                                        <div
-                                            key={product.productId}
-                                            onClick={() => setSelectedProduct(product)}
-                                            className={`p-3 rounded-lg cursor-pointer transition-all ${selectedProduct?.productId === product.productId
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
-                                                }`}
+                            <div className="pantry-card p-4 sticky top-24">
+                                <p className="kicker mb-3">All products · {products.length}</p>
+                                <div className="space-y-1.5 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
+                                    {products.map((p) => (
+                                        <button
+                                            key={p.productId}
+                                            onClick={() => setSelected(p)}
+                                            className={`w-full text-left p-3 rounded-xl transition-all flex items-center gap-3 ${selected?.productId === p.productId ? "bg-terracotta text-paper" : "hover:bg-paper-2"}`}
                                         >
-                                            <div className="flex items-center gap-3">
-                                                {product.imageUrl && (
-                                                    <img
-                                                        src={product.imageUrl}
-                                                        alt={product.name}
-                                                        className="w-10 h-10 object-cover rounded-lg flex-shrink-0"
-                                                    />
-                                                )}
-                                                <div className="flex-1 min-w-0">
-                                                    <h3 className="font-semibold truncate text-sm">{product.name}</h3>
-                                                    <p className="text-xs opacity-75 truncate">{product.brand}</p>
-                                                </div>
-                                                {product.status === 'in_stock' ? (
-                                                    <Check className="w-4 h-4 text-green-400 flex-shrink-0" />
+                                            <div className="w-10 h-10 rounded-lg bg-paper-2 border border-line flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                {p.imageUrl ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
                                                 ) : (
-                                                    <X className="w-4 h-4 text-red-400 flex-shrink-0" />
+                                                    <Package className={`w-5 h-5 ${selected?.productId === p.productId ? "text-paper" : "text-ink-faint"}`} strokeWidth={1.6} />
                                                 )}
                                             </div>
-                                        </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-semibold truncate text-sm">{p.name}</p>
+                                                <p className={`text-xs truncate ${selected?.productId === p.productId ? "text-paper/70" : "text-ink-faint"}`}>{p.brand || "—"}</p>
+                                            </div>
+                                            {p.predictions?.needsRestock ? (
+                                                <AlertTriangle className="w-4 h-4 text-amber flex-shrink-0" />
+                                            ) : p.status === "in_stock" ? (
+                                                <Check className={`w-4 h-4 flex-shrink-0 ${selected?.productId === p.productId ? "text-paper" : "text-olive"}`} />
+                                            ) : (
+                                                <X className={`w-4 h-4 flex-shrink-0 ${selected?.productId === p.productId ? "text-paper/70" : "text-ink-faint"}`} />
+                                            )}
+                                        </button>
                                     ))}
                                 </div>
                             </div>
                         </div>
 
-                        {/* Product Details - Right Panel */}
-                        {selectedProduct && (
-                            <div className="lg:col-span-2">
-                                <div className="bg-gray-800 rounded-xl border border-gray-700 p-6">
-                                    {/* Header */}
-                                    <div className="flex items-start gap-6 mb-6">
-                                        {selectedProduct.imageUrl && (
-                                            <img
-                                                src={selectedProduct.imageUrl}
-                                                alt={selectedProduct.name}
-                                                className="w-24 h-24 object-cover rounded-xl flex-shrink-0"
-                                            />
-                                        )}
+                        {/* Detail */}
+                        {selected && (
+                            <div className="lg:col-span-2 rise">
+                                <div className="pantry-card p-6">
+                                    <div className="flex items-start gap-5 mb-6">
+                                        <div className="w-24 h-24 rounded-2xl bg-paper-2 border border-line flex items-center justify-center overflow-hidden flex-shrink-0">
+                                            {selected.imageUrl ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={selected.imageUrl} alt={selected.name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <Package className="w-10 h-10 text-ink-faint" strokeWidth={1.5} />
+                                            )}
+                                        </div>
                                         <div className="flex-1">
-                                            <h2 className="text-2xl font-bold text-white mb-1">{selectedProduct.name}</h2>
-                                            <p className="text-lg text-gray-400 mb-2">{selectedProduct.brand}</p>
-                                            <div className="flex gap-2">
-                                                <span className="text-xs text-gray-500 bg-gray-700 px-2 py-1 rounded-full">
-                                                    {selectedProduct.category}
-                                                </span>
-                                                <span className={`text-xs px-2 py-1 rounded-full ${selectedProduct.status === 'in_stock'
-                                                        ? 'bg-green-500/20 text-green-400'
-                                                        : 'bg-red-500/20 text-red-400'
-                                                    }`}>
-                                                    {selectedProduct.status === 'in_stock' ? 'In Stock' : 'Out of Stock'}
+                                            {selected.brand && <p className="kicker">{selected.brand}</p>}
+                                            <h2 className="font-display text-3xl font-semibold text-ink leading-tight">{selected.name}</h2>
+                                            <div className="flex gap-2 mt-2">
+                                                <span className="pill bg-paper-2 text-ink-soft">{selected.category}</span>
+                                                <span className={`pill ${selected.status === "in_stock" ? "bg-olive/10 text-olive" : "bg-berry/10 text-berry"}`}>
+                                                    {selected.status === "in_stock" ? "In stock" : "Out of stock"}
                                                 </span>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Current Stock */}
-                                    {selectedProduct.status === 'in_stock' && (
-                                        <div className="mb-6 bg-gray-700/30 rounded-xl p-4 border border-gray-600">
-                                            <h3 className="text-sm font-semibold text-gray-400 mb-3">Current Stock</h3>
-                                            <p className="text-3xl font-bold text-white">
-                                                {selectedProduct.currentStock} {selectedProduct.unit}
-                                            </p>
+                                    {selected.status === "in_stock" && (
+                                        <div className="mb-6 bg-paper-2/60 rounded-xl p-4 border border-line">
+                                            <p className="kicker mb-1">Current stock</p>
+                                            <p className="font-display text-3xl font-semibold text-ink">{selected.currentStock} {selected.unit}</p>
                                         </div>
                                     )}
 
-                                    {/* Consumption History */}
-                                    {selectedProduct.consumptionHistory.timesConsumed > 0 && (
+                                    {selected.consumptionHistory.timesConsumed > 0 && (
                                         <div className="mb-6">
-                                            <h3 className="text-sm font-semibold text-gray-400 mb-3">Consumption History</h3>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="bg-gray-700/30 rounded-xl p-4 border border-gray-600">
-                                                    <p className="text-xs text-gray-500 mb-1">Total Consumed</p>
-                                                    <p className="text-2xl font-bold text-white">
-                                                        {selectedProduct.consumptionHistory.totalConsumed}
-                                                    </p>
-                                                </div>
-                                                <div className="bg-gray-700/30 rounded-xl p-4 border border-gray-600">
-                                                    <p className="text-xs text-gray-500 mb-1">Times Consumed</p>
-                                                    <p className="text-2xl font-bold text-white">
-                                                        {selectedProduct.consumptionHistory.timesConsumed}
-                                                    </p>
-                                                </div>
-                                                <div className="bg-gray-700/30 rounded-xl p-4 border border-gray-600">
-                                                    <p className="text-xs text-gray-500 mb-1">Avg Duration</p>
-                                                    <p className="text-2xl font-bold text-white">
-                                                        {selectedProduct.consumptionHistory.averageDurationDays} days
-                                                    </p>
-                                                </div>
-                                                <div className="bg-gray-700/30 rounded-xl p-4 border border-gray-600">
-                                                    <p className="text-xs text-gray-500 mb-1">Last Consumed</p>
-                                                    <p className="text-sm font-bold text-white">
-                                                        {selectedProduct.consumptionHistory.lastConsumed
-                                                            ? new Date(selectedProduct.consumptionHistory.lastConsumed).toLocaleDateString()
-                                                            : 'N/A'}
-                                                    </p>
-                                                </div>
+                                            <p className="kicker mb-3">Consumption history</p>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <Stat label="Times used" value={`${selected.consumptionHistory.timesConsumed}`} />
+                                                <Stat label="Avg duration" value={`${selected.consumptionHistory.averageDurationDays} days`} />
+                                                <Stat label="Total consumed" value={`${selected.consumptionHistory.totalConsumed}`} />
+                                                <Stat label="Last used" value={selected.consumptionHistory.lastConsumed ? new Date(selected.consumptionHistory.lastConsumed).toLocaleDateString() : "—"} />
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* Predictions */}
-                                    {selectedProduct.predictions && (
+                                    {selected.predictions ? (
                                         <div>
-                                            <h3 className="text-sm font-semibold text-gray-400 mb-3">Predictions</h3>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="bg-purple-500/10 rounded-xl p-4 border border-purple-500/30">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <TrendingDown className="w-4 h-4 text-purple-400" />
-                                                        <p className="text-xs text-purple-300">Consumption Rate</p>
+                                            <p className="kicker mb-3">Forecast</p>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="rounded-xl p-4 border border-olive/25 bg-olive/5">
+                                                    <div className="flex items-center gap-2 mb-1 text-olive">
+                                                        <TrendingDown className="w-4 h-4" />
+                                                        <span className="text-xs font-semibold">Consumption rate</span>
                                                     </div>
-                                                    <p className="text-2xl font-bold text-white">
-                                                        {selectedProduct.predictions.consumptionRate} {selectedProduct.unit}/day
-                                                    </p>
+                                                    <p className="font-display text-2xl font-semibold text-ink">{selected.predictions.consumptionRate} <span className="text-base text-ink-soft">/day</span></p>
                                                 </div>
-                                                <div className={`rounded-xl p-4 border ${selectedProduct.predictions.needsRestock
-                                                        ? 'bg-red-500/10 border-red-500/30'
-                                                        : 'bg-green-500/10 border-green-500/30'
-                                                    }`}>
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <Clock className={`w-4 h-4 ${selectedProduct.predictions.needsRestock ? 'text-red-400' : 'text-green-400'
-                                                            }`} />
-                                                        <p className={`text-xs ${selectedProduct.predictions.needsRestock ? 'text-red-300' : 'text-green-300'
-                                                            }`}>Days Until Empty</p>
+                                                <div className={`rounded-xl p-4 border ${selected.predictions.needsRestock ? "border-terracotta/30 bg-terracotta/5" : "border-olive/25 bg-olive/5"}`}>
+                                                    <div className={`flex items-center gap-2 mb-1 ${selected.predictions.needsRestock ? "text-terracotta" : "text-olive"}`}>
+                                                        <Clock className="w-4 h-4" />
+                                                        <span className="text-xs font-semibold">Days until empty</span>
                                                     </div>
-                                                    <p className={`text-2xl font-bold ${selectedProduct.predictions.needsRestock ? 'text-red-400' : 'text-green-400'
-                                                        }`}>
-                                                        {selectedProduct.predictions.daysUntilEmpty} days
-                                                    </p>
+                                                    <p className={`font-display text-2xl font-semibold ${selected.predictions.needsRestock ? "text-terracotta" : "text-ink"}`}>{selected.predictions.daysUntilEmpty} days</p>
                                                 </div>
-                                                <div className="col-span-2 bg-orange-500/10 rounded-xl p-4 border border-orange-500/30">
-                                                    <p className="text-xs text-orange-300 mb-1">Estimated Restock Date</p>
-                                                    <p className="text-xl font-bold text-white">
-                                                        {new Date(selectedProduct.predictions.restockDate).toLocaleDateString('en-US', {
-                                                            weekday: 'short',
-                                                            month: 'short',
-                                                            day: 'numeric',
-                                                            year: 'numeric'
-                                                        })}
+                                                <div className="col-span-2 rounded-xl p-4 border border-amber/30 bg-amber/5">
+                                                    <p className="text-xs font-semibold text-amber mb-1">Estimated restock date</p>
+                                                    <p className="font-display text-xl font-semibold text-ink">
+                                                        {new Date(selected.predictions.restockDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                                                     </p>
                                                 </div>
                                             </div>
 
-                                            {selectedProduct.predictions.needsRestock && (
-                                                <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-xl p-4">
-                                                    <p className="text-sm text-red-300">
-                                                        ⚠️ <strong>Restock Alert:</strong> This product will run out in less than 7 days!
-                                                    </p>
+                                            {selected.predictions.needsRestock && (
+                                                <div className="mt-4 bg-terracotta/10 border border-terracotta/30 rounded-xl p-4 flex items-center gap-3">
+                                                    <AlertTriangle className="w-5 h-5 text-terracotta flex-shrink-0" />
+                                                    <p className="text-sm text-terracotta-deep"><strong>Restock soon</strong> — runs out in under 7 days.</p>
                                                 </div>
                                             )}
                                         </div>
-                                    )}
-
-                                    {/* No Data Message */}
-                                    {selectedProduct.consumptionHistory.timesConsumed === 0 && !selectedProduct.predictions && (
-                                        <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-6 text-center">
-                                            <p className="text-blue-300">
-                                                No consumption history available yet. Mark this product as consumed to see analytics!
-                                            </p>
+                                    ) : (
+                                        <div className="bg-paper-2/60 border border-line rounded-xl p-6 text-center">
+                                            <p className="text-ink-soft text-sm">No forecast yet — mark this product consumed a few times to learn its rhythm.</p>
                                         </div>
                                     )}
                                 </div>
@@ -268,7 +198,16 @@ export default function AnalyticsPage() {
                         )}
                     </div>
                 )}
-            </div>
+            </main>
+        </div>
+    );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="bg-paper-2/60 rounded-xl p-4 border border-line">
+            <p className="text-xs text-ink-faint mb-1">{label}</p>
+            <p className="font-display text-xl font-semibold text-ink">{value}</p>
         </div>
     );
 }

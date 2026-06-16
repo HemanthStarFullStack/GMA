@@ -9,6 +9,8 @@ export interface IUser extends Document {
     displayName: string;
     familySize: number;
     createdAt: Date;
+    demoSeeded: boolean; // whether the one-time demo onboarding data has been created
+    tourCompleted: boolean; // whether the new-user guided tour has run
     preferences: {
         surveyFrequency: 'always' | 'occasional';
     };
@@ -22,6 +24,8 @@ const UserSchema = new Schema<IUser>({
     displayName: { type: String, default: 'User' },
     familySize: { type: Number, default: 1 },
     createdAt: { type: Date, default: Date.now },
+    demoSeeded: { type: Boolean, default: false },
+    tourCompleted: { type: Boolean, default: false },
     preferences: {
         surveyFrequency: { type: String, enum: ['always', 'occasional'], default: 'occasional' },
     },
@@ -58,21 +62,21 @@ export const Account = mongoose.models.Account || mongoose.model('Account', Acco
 export const Session = mongoose.models.Session || mongoose.model('Session', SessionSchema);
 export const VerificationToken = mongoose.models.VerificationToken || mongoose.model('VerificationToken', VerificationTokenSchema);
 
-// Product Schema
+// Product Schema — a globally-shared catalogue keyed by barcode. Doubles as the
+// self-learning cache: anything a user adds (via lookup or manually) is stored
+// here so the next scan of the same barcode resolves instantly with no API call.
 export interface IProduct extends Document {
     barcode: string;
     name: string;
     brand: string;
-    flavor?: string; // Added flavor field
+    flavor?: string;
     category: string;
-    imageUrl?: string;
+    imageUrl?: string | null;
     defaultUnit: string;
-    averageDuration: number; // days
-    addedBy: 'barcode' | 'ai' | 'manual';
-    confidence: number;
-    imageVerified?: boolean; // NEW: If image was AI-verified
-    imageConfidence?: number; // NEW: AI verification confidence score
-    imageSource?: 'web' | 'ai' | 'manual' | null; // NEW: Where image came from
+    averageDuration: number; // expected days a single unit lasts a household of 1
+    addedBy: 'barcode' | 'manual' | 'demo';
+    source?: 'upcitemdb' | 'openfoodfacts' | 'cache' | 'manual' | 'demo' | null;
+    isDemo: boolean;
 }
 
 const ProductSchema = new Schema<IProduct>({
@@ -81,45 +85,47 @@ const ProductSchema = new Schema<IProduct>({
     brand: { type: String, default: '' },
     flavor: { type: String, default: '' },
     category: { type: String, default: 'Other' },
-    imageUrl: String,
+    imageUrl: { type: String, default: null },
     defaultUnit: { type: String, default: 'units' },
     averageDuration: { type: Number, default: 14 },
-    addedBy: { type: String, enum: ['barcode', 'ai', 'manual'], required: true },
-    confidence: { type: Number, default: 1.0 },
-    imageVerified: { type: Boolean, default: false },
-    imageConfidence: { type: Number, default: 0 },
-    imageSource: { type: String, enum: ['web', 'ai', 'manual', null], default: null }
+    addedBy: { type: String, enum: ['barcode', 'manual', 'demo'], default: 'barcode' },
+    source: { type: String, default: null },
+    isDemo: { type: Boolean, default: false },
 });
 
-// Inventory Schema
+// Inventory Schema — productId stores the BARCODE (string), consistently joined
+// against Product.barcode everywhere in the app.
 export interface IInventory extends Document {
     userId: string;
-    productId: string;
+    productId: string; // barcode
     quantity: number;
     unit: string;
     purchaseDate: Date;
     expiryDate?: Date;
     status: 'active' | 'consumed' | 'wasted' | 'expired';
+    isDemo: boolean;
 }
 
 const InventorySchema = new Schema<IInventory>({
-    userId: { type: String, required: true },
+    userId: { type: String, required: true, index: true },
     productId: { type: String, required: true },
     quantity: { type: Number, required: true },
     unit: { type: String, required: true },
     purchaseDate: { type: Date, default: Date.now },
     expiryDate: Date,
     status: { type: String, enum: ['active', 'consumed', 'wasted', 'expired'], default: 'active' },
+    isDemo: { type: Boolean, default: false },
 });
 
 // Consumption Log Schema
 export interface IConsumptionLog extends Document {
     userId: string;
-    productId: string;
+    productId: string; // barcode
     inventoryId: string;
     consumedDate: Date;
     durationDays: number;
     surveyCompleted: boolean;
+    isDemo: boolean;
     surveyData?: {
         userReportedDays: number;
         familySize: number;
@@ -129,12 +135,13 @@ export interface IConsumptionLog extends Document {
 }
 
 const ConsumptionLogSchema = new Schema<IConsumptionLog>({
-    userId: { type: String, required: true },
+    userId: { type: String, required: true, index: true },
     productId: { type: String, required: true },
     inventoryId: { type: String, required: true },
     consumedDate: { type: Date, default: Date.now },
     durationDays: { type: Number, required: true },
     surveyCompleted: { type: Boolean, default: false },
+    isDemo: { type: Boolean, default: false },
     surveyData: {
         userReportedDays: Number,
         familySize: Number,

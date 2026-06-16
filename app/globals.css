@@ -1,26 +1,203 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+  SINTI — warm / bright design system.
+  Cream canvas · dot-grid texture · vibrant coral accent.
+  Warm shades, not plain white. Bright and inviting.
+*/
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* ── Surfaces ────────────────────────────────────────────────── */
+  --color-paper:   #fdf6ee;   /* warm cream */
+  --color-paper-2: #f6e9da;   /* deeper sand */
+  --color-card:    #fffaf3;   /* warm white */
+
+  /* ── Ink ─────────────────────────────────────────────────────── */
+  --color-ink:       #2b2118;   /* warm near-black */
+  --color-ink-soft:  #6b5d4f;
+  --color-ink-faint: #b1a294;
+
+  /* ── Accents ─────────────────────────────────────────────────── */
+  --color-terracotta:      #f43f5e;   /* urgency — bright rose */
+  --color-terracotta-deep: #e11d48;
+  --color-olive:           #16a34a;   /* well-stocked — green */
+  --color-olive-soft:      #22c55e;
+  --color-amber:           #f59e0b;   /* warning — bright amber */
+  --color-berry:           #8b5cf6;   /* secondary — violet */
+
+  /* Primary — vibrant coral / tangerine */
+  --color-primary:      #ff6b35;
+  --color-primary-deep: #ea580c;
+
+  /* ── Lines ───────────────────────────────────────────────────── */
+  --color-line:        #ecdcc9;
+  --color-line-strong: #d8c3aa;
+
+  /* ── Type ────────────────────────────────────────────────────── */
+  --font-display: var(--font-fraunces);
+  --font-sans:    var(--font-hanken);
+  --font-mono:    var(--font-geist-mono);
+
+  --radius-card: 0.75rem;   /* tighter = more engineered */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --background: #fdf6ee;
+  --foreground: #2b2118;
+}
+
+@layer base {
+  body {
+    background-color: #fdf6ee;
+    color: #2b2118;
+    font-family: var(--font-hanken), system-ui, sans-serif;
+    /* Warm sunrise wash + soft dot grid */
+    background-image:
+      radial-gradient(circle, #e7d3bb 1px, transparent 1px),
+      radial-gradient(1200px 600px at 80% -10%, rgba(255,107,53,0.12), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(245,158,11,0.10), transparent 60%);
+    background-size: 22px 22px, 100% 100%, 100% 100%;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Warm fade overlay so the grid doesn't compete with content */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      rgba(253,246,238,0.88) 0%,
+      rgba(253,246,238,0.55) 40%,
+      rgba(253,246,238,0.55) 60%,
+      rgba(253,246,238,0.88) 100%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Ensure all page content sits above the overlay */
+  #__next, body > * { position: relative; z-index: 1; }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-fraunces), Georgia, serif;
+    letter-spacing: -0.02em;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .font-display {
+    font-family: var(--font-fraunces), Georgia, serif;
+  }
+
+  /* ── Cards ───────────────────────────────────────────────────── */
+  .pantry-card {
+    background-color: rgba(255, 250, 243, 0.90);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.6) inset,
+      0 1px 2px rgba(120,72,30,0.06),
+      0 10px 28px rgba(120,72,30,0.10);
+    backdrop-filter: blur(8px);
+  }
+
+  /* ── Primary button — electric blue ─────────────────────────── */
+  .btn-primary {
+    background-color: var(--color-primary);
+    color: #ffffff;
+    border-radius: 999px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    box-shadow: 0 2px 10px rgba(255, 107, 53, 0.40);
+    transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+  }
+  .btn-primary:hover {
+    background-color: var(--color-primary-deep);
+    box-shadow: 0 6px 18px rgba(255, 107, 53, 0.50);
+  }
+  .btn-primary:active { transform: translateY(1px); }
+
+  /* ── Ghost button ────────────────────────────────────────────── */
+  .btn-ghost {
+    border: 1px solid var(--color-line-strong);
+    color: var(--color-ink-soft);
+    border-radius: 999px;
+    font-weight: 600;
+    background-color: transparent;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .btn-ghost:hover {
+    background-color: var(--color-paper-2);
+    color: var(--color-ink);
+  }
+
+  /* ── Kicker / label ──────────────────────────────────────────── */
+  .kicker {
+    font-family: var(--font-mono), monospace;   /* mono = tech / futuristic */
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: var(--color-primary);
+  }
+
+  .pill {
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.15rem 0.6rem;
+  }
+
+  /* ── Form inputs ─────────────────────────────────────────────── */
+  input, select, textarea {
+    color-scheme: light;
+  }
 }
+
+/* ── driver.js tour ───────────────────────────────────────────── */
+.driver-popover.driverjs-theme {
+  background-color: #ffffff;
+  color: var(--color-ink);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-line);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+.driver-popover.driverjs-theme .driver-popover-title {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-size: 1.1rem;
+  color: var(--color-ink);
+}
+.driver-popover.driverjs-theme .driver-popover-description {
+  color: var(--color-ink-soft);
+}
+.driver-popover.driverjs-theme .driver-popover-progress-text {
+  color: var(--color-ink-faint);
+}
+.driver-popover.driverjs-theme button {
+  background-color: var(--color-paper-2);
+  color: var(--color-ink);
+  border-radius: 999px;
+  border: 1px solid var(--color-line-strong);
+  text-shadow: none;
+  font-weight: 600;
+}
+.driver-popover.driverjs-theme .driver-popover-next-btn {
+  background-color: var(--color-primary);
+  color: #ffffff;
+  border-color: var(--color-primary);
+}
+.driver-popover.driverjs-theme .driver-popover-arrow { color: #ffffff; }
+
+/* ── Scroll bar ───────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--color-paper-2); }
+::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
+
+/* ── Rise animation ───────────────────────────────────────────── */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }

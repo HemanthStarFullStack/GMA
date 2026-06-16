@@ -1,392 +1,281 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import BarcodeScanner from "@/components/BarcodeScanner";
-import { ArrowLeft, Sparkles, Upload, Camera as CameraIcon } from "lucide-react";
+import { ArrowLeft, Package, CheckCircle2, Loader2, Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
 
+const CATEGORIES = [
+    "Dairy & Eggs", "Beverages", "Fruits & Vegetables", "Meat & Seafood",
+    "Bakery", "Pantry", "Frozen Foods", "Snacks", "Condiments & Sauces",
+    "Cleaning & Household", "Personal Care", "Other",
+];
+
+type Found = {
+    barcode: string;
+    name: string;
+    brand: string;
+    flavor?: string;
+    category: string;
+    imageUrl: string | null;
+    unit: string;
+    source: string;
+};
+
+type Mode = "scan" | "confirm" | "manual" | "saving" | "done";
+
 export default function ScanPage() {
     const router = useRouter();
-    const [scannedCode, setScannedCode] = useState<string | null>(null);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [uploadMode, setUploadMode] = useState(false);
-    const [showNotFound, setShowNotFound] = useState(false);
-    const [failedBarcode, setFailedBarcode] = useState<string | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [mode, setMode] = useState<Mode>("scan");
+    const [found, setFound] = useState<Found | null>(null);
+    const [quantity, setQuantity] = useState(1);
+    const [toast, setToast] = useState<string | null>(null);
+    const [lookingUp, setLookingUp] = useState(false);
 
-    const processWithAI = async (imageSrc: string) => {
-        setIsProcessing(true);
-
-        try {
-            const res = await fetch('/api/ai-identify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: imageSrc })
-            });
-
-            const data = await res.json();
-
-            if (data.success) {
-                const aiProduct = data.data;
-
-                const addRes = await fetch('/api/inventory', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        productId: `AI-${Date.now()}`,
-                        quantity: 1,
-                        unit: aiProduct.defaultUnit || 'units',
-                        productDetails: {
-                            name: aiProduct.name,
-                            brand: aiProduct.brand,
-                            flavor: aiProduct.flavor,
-                            category: aiProduct.category,
-                            imageUrl: aiProduct.imageUrl,
-                            addedBy: 'ai',
-                            confidence: aiProduct.confidence
-                        }
-                    })
-                });
-
-                if (addRes.ok) {
-                    setScannedCode(`AI Identified: ${aiProduct.name} by ${aiProduct.brand}`);
-                    setTimeout(() => router.push('/inventory'), 2000);
-                } else {
-                    alert('Failed to add item to inventory');
-                    setIsProcessing(false);
-                }
-            } else {
-                alert('AI could not identify the product. Please try again.');
-                setIsProcessing(false);
-            }
-        } catch (error) {
-            console.error('AI processing error:', error);
-            alert('Error processing image. Please try again.');
-            setIsProcessing(false);
-        }
-    };
-
-    const handleCapture = async (imageSrc: string) => {
-        if (isProcessing) return;
-        await processWithAI(imageSrc);
-    };
-
-    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file || isProcessing) return;
-
-        // Validate file type
-        if (!file.type.startsWith('image/')) {
-            alert('Please upload an image file');
-            return;
-        }
-
-        // Convert to base64
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const base64Image = e.target?.result as string;
-            await processWithAI(base64Image);
-        };
-        reader.readAsDataURL(file);
-
-        // Reset input
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
-    };
-
-    const handleManualAdd = async (barcode: string) => {
-        // Fallback logic: Add as generic item
-        try {
-            const res = await fetch('/api/inventory', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    productId: barcode,
-                    quantity: 1,
-                    unit: 'units',
-                    productDetails: {
-                        name: 'Unknown Product',
-                        brand: 'Unknown',
-                        category: 'Other',
-                        addedBy: 'manual'
-                    }
-                })
-            });
-
-            if (res.ok) {
-                router.push('/inventory');
-            } else {
-                alert('Failed to add item');
-            }
-        } catch (e) {
-            console.error('Manual add error', e);
-        }
-    };
+    const [form, setForm] = useState({
+        barcode: "",
+        name: "",
+        brand: "",
+        category: "Other",
+        unit: "units",
+        quantity: 1,
+        averageDuration: 14,
+    });
 
     const handleScan = async (barcode: string) => {
-        if (isProcessing) return;
-
-        setScannedCode(barcode);
-        setIsProcessing(true);
-
+        setLookingUp(true);
         try {
-            // 1. Lookup Barcode
-            const lookupRes = await fetch(`/api/barcode?barcode=${barcode}`);
-            const lookupData = await lookupRes.json();
-
-            let productData = {
-                productId: barcode,
-                quantity: 1,
-                unit: 'units',
-                productDetails: null as any
-            };
-
-            if (lookupData.success) {
-                // Found product!
-                const item = lookupData.data;
-                setScannedCode(`✓ ${item.name} (${lookupData.source})`);
-                productData.productDetails = item;
-
-                // Add to inventory
-                const res = await fetch('/api/inventory', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(productData)
-                });
-
-                if (res.ok) {
-                    setTimeout(() => {
-                        router.push('/inventory');
-                    }, 1500);
-                } else {
-                    alert('Failed to add item to inventory');
-                    setIsProcessing(false);
-                }
-
+            const res = await fetch(`/api/barcode?barcode=${encodeURIComponent(barcode)}`);
+            const data = await res.json();
+            if (data.success) {
+                setFound({ ...data.data, source: data.source });
+                setQuantity(1);
+                setMode("confirm");
             } else {
-                // Not found in ANY provider
-                console.log('Product not found in any database');
-                setFailedBarcode(barcode);
-                setShowNotFound(true);
-                // Do NOT auto-add. Let user decide in dialog.
+                if (data.code === "RATE_LIMITED") {
+                    setToast("Daily lookup limit reached. The product may exist — fill it in manually.");
+                }
+                setForm((f) => ({ ...f, barcode, name: "", brand: "", category: "Other", unit: "units", quantity: 1, averageDuration: 14 }));
+                setMode("manual");
             }
-
-        } catch (error) {
-            console.error('Scan error:', error);
-            alert('Error processing barcode');
-            setIsProcessing(false);
+        } catch {
+            setForm((f) => ({ ...f, barcode }));
+            setToast("Barcode lookup failed. Check your connection and add the product manually.");
+            setMode("manual");
+        } finally {
+            setLookingUp(false);
         }
     };
 
-    const handleError = (error: string) => {
-        console.error("Scanner error:", error);
+    const openManual = () => {
+        setForm((f) => ({ ...f, barcode: `MANUAL-${Date.now()}`, name: "", brand: "", category: "Other", unit: "units", quantity: 1, averageDuration: 14 }));
+        setMode("manual");
+    };
+
+    const addFound = async () => {
+        if (!found) return;
+        setMode("saving");
+        try {
+            const res = await fetch("/api/inventory", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    productId: found.barcode,
+                    quantity,
+                    unit: found.unit || "units",
+                    productDetails: {
+                        name: found.name, brand: found.brand, flavor: found.flavor,
+                        category: found.category, imageUrl: found.imageUrl, unit: found.unit,
+                        addedBy: "barcode", source: found.source,
+                    },
+                }),
+            });
+            if (!res.ok) throw new Error();
+            finish(`${found.name} added`);
+        } catch {
+            setToast("Could not add item. Try again.");
+            setMode("confirm");
+        }
+    };
+
+    const addManual = async () => {
+        if (!form.name.trim()) {
+            setToast("Please enter a product name.");
+            return;
+        }
+        setMode("saving");
+        try {
+            const res = await fetch("/api/inventory", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    productId: form.barcode || `MANUAL-${Date.now()}`,
+                    quantity: form.quantity,
+                    unit: form.unit || "units",
+                    productDetails: {
+                        name: form.name.trim(), brand: form.brand.trim(), category: form.category,
+                        unit: form.unit, averageDuration: Number(form.averageDuration) || 14,
+                        addedBy: "manual", source: "manual",
+                    },
+                }),
+            });
+            if (!res.ok) throw new Error();
+            finish(`${form.name.trim()} added`);
+        } catch {
+            setToast("Could not add item. Try again.");
+            setMode("manual");
+        }
+    };
+
+    const finish = (msg: string) => {
+        setMode("done");
+        setToast(msg);
+        setTimeout(() => router.push("/inventory"), 1100);
     };
 
     return (
-        <div className="min-h-screen bg-gray-900">
-            {/* Header */}
-            <div className="bg-gray-800 border-b border-gray-700">
-                <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2 text-white hover:text-gray-300">
+        <div className="min-h-screen">
+            <header className="border-b border-line">
+                <div className="container mx-auto px-5 py-4 flex items-center justify-between">
+                    <Link href="/" className="flex items-center gap-2 text-ink-soft hover:text-ink">
                         <ArrowLeft className="w-5 h-5" />
                         <span className="font-medium">Back</span>
                     </Link>
-                    <h1 className="text-xl font-bold text-white">Scan Product</h1>
-                    <div className="flex justify-end min-w-[3rem]">
-                        <UserMenu />
-                    </div>
+                    <h1 className="font-display text-2xl font-semibold text-ink">Add a product</h1>
+                    <UserMenu />
                 </div>
-            </div>
+            </header>
 
-            {/* Mode Toggle */}
-            <div className="bg-gray-800 border-b border-gray-700">
-                <div className="container mx-auto px-4 py-3">
-                    <div className="max-w-2xl mx-auto flex gap-2">
-                        <button
-                            onClick={() => setUploadMode(false)}
-                            className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${!uploadMode
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                }`}
-                        >
-                            <div className="flex items-center justify-center gap-2">
-                                <CameraIcon className="w-4 h-4" />
-                                <span>Camera Scan</span>
-                            </div>
-                        </button>
-                        <button
-                            onClick={() => setUploadMode(true)}
-                            className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${uploadMode
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                }`}
-                        >
-                            <div className="flex items-center justify-center gap-2">
-                                <Upload className="w-4 h-4" />
-                                <span>Upload Image</span>
-                            </div>
-                        </button>
+            <main className="container mx-auto px-5 py-8 max-w-xl">
+                {mode === "scan" && (
+                    <div className="rise">
+                        <p className="kicker mb-3 text-center">Point · scan · confirm</p>
+                        <div className="aspect-[3/4] sm:aspect-video w-full ring-1 ring-line rounded-2xl overflow-hidden shadow-xl relative">
+                            <BarcodeScanner onScan={handleScan} onManual={openManual} onError={(e) => setToast(e)} />
+                            {lookingUp && (
+                                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center">
+                                    <Loader2 className="w-10 h-10 animate-spin text-white" />
+                                    <p className="mt-3 text-white text-sm font-medium">Looking up barcode…</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
-            </div>
+                )}
 
-            {/* Scanner / Upload */}
-            <div className="container mx-auto px-4 py-6">
-                <div className="max-w-2xl mx-auto">
-                    {!uploadMode ? (
-                        <>
-                            {/* Camera Scanner */}
-                            <div className="aspect-video w-full mb-6">
-                                <BarcodeScanner
-                                    onScan={handleScan}
-                                    onError={handleError}
-                                    onCapture={handleCapture}
-                                />
+                {mode === "confirm" && found && (
+                    <div className="pantry-card overflow-hidden rise">
+                        <div className="p-5 flex gap-4">
+                            <div className="w-24 h-24 rounded-xl bg-paper-2 border border-line flex items-center justify-center overflow-hidden flex-shrink-0">
+                                {found.imageUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={found.imageUrl} alt={found.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    <Package className="w-10 h-10 text-ink-faint" strokeWidth={1.6} />
+                                )}
                             </div>
-                        </>
-                    ) : (
-                        <>
-                            {/* Image Upload */}
-                            <div className="aspect-video w-full mb-6 bg-gray-800 rounded-xl border-2 border-dashed border-gray-600 flex items-center justify-center">
-                                <div className="text-center p-8">
-                                    <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                                    <h3 className="text-lg font-semibold text-white mb-2">
-                                        Upload Product Image
-                                    </h3>
-                                    <p className="text-gray-400 mb-6 text-sm">
-                                        Upload a clear photo of the product for AI identification
-                                    </p>
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        accept="image/*"
-                                        onChange={handleFileUpload}
-                                        className="hidden"
-                                        disabled={isProcessing}
-                                    />
-                                    <button
-                                        onClick={() => fileInputRef.current?.click()}
-                                        disabled={isProcessing}
-                                        className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {isProcessing ? 'Processing...' : 'Choose Image'}
-                                    </button>
-                                </div>
-                            </div>
-                        </>
-                    )}
-
-                    {/* Scan Result */}
-                    {scannedCode && (
-                        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-                            <div className="flex items-start gap-4">
-                                <div className="flex-shrink-0 w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                                    <Sparkles className="w-6 h-6 text-green-600" />
-                                </div>
-                                <div className="flex-1">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                                        {isProcessing ? "Processing..." : "Product Detected!"}
-                                    </h3>
-                                    <p className="text-gray-600 text-sm">{scannedCode}</p>
-                                    {isProcessing && (
-                                        <p className="text-sm text-purple-600 mt-2">
-                                            Adding to inventory...
-                                        </p>
-                                    )}
-                                </div>
+                            <div className="min-w-0">
+                                {found.brand && <p className="kicker">{found.brand}</p>}
+                                <h2 className="font-display text-xl font-semibold text-ink leading-tight">{found.name}</h2>
+                                <p className="text-sm text-ink-soft mt-1">{found.category}</p>
+                                <span className="inline-block mt-2 pill bg-olive/10 text-olive">
+                                    {found.source === "cache" ? "from your library" : `via ${found.source}`}
+                                </span>
                             </div>
                         </div>
-                    )}
 
-                    {/* Not Found Dialog */}
-                    {showNotFound && (
-                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-                            <div className="bg-gray-800 rounded-xl p-6 max-w-sm w-full border border-gray-700 shadow-2xl">
-                                <div className="flex items-start gap-4 mb-4">
-                                    <div className="bg-yellow-500/20 p-2 rounded-full">
-                                        <Sparkles className="w-6 h-6 text-yellow-500" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-lg font-bold text-white">Product Not Found</h3>
-                                        <p className="text-gray-400 text-sm mt-1">
-                                            We couldn't find details for barcode <span className="font-mono text-yellow-400">{failedBarcode}</span>.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-3">
-                                    <button
-                                        onClick={() => {
-                                            setShowNotFound(false);
-                                            setUploadMode(true);
-                                        }}
-                                        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
-                                    >
-                                        <CameraIcon className="w-5 h-5" />
-                                        Identify with AI Camera
-                                    </button>
-
-                                    <div className="relative">
-                                        <div className="absolute inset-0 flex items-center">
-                                            <div className="w-full border-t border-gray-600"></div>
-                                        </div>
-                                        <div className="relative flex justify-center text-xs uppercase">
-                                            <span className="bg-gray-800 px-2 text-gray-500">Or</span>
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        onClick={() => {
-                                            setShowNotFound(false);
-                                            // Fallback to manual entry (just store generic known barcode)
-                                            // Ideally forward to an edit page, but for now just saving as "Unknown" is the backup
-                                            handleManualAdd(failedBarcode || '');
-                                        }}
-                                        className="w-full py-2 px-4 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg font-medium text-sm transition-colors"
-                                    >
-                                        Add as Unknown Item
-                                    </button>
-
-                                    <button
-                                        onClick={() => {
-                                            setShowNotFound(false);
-                                            setIsProcessing(false);
-                                            setScannedCode(null);
-                                        }}
-                                        className="w-full py-2 text-gray-500 hover:text-gray-300 text-sm"
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
+                        <div className="px-5 pb-2 flex items-center justify-between">
+                            <span className="text-sm font-medium text-ink-soft">Quantity</span>
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => setQuantity((q) => Math.max(1, q - 1))} className="w-9 h-9 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2">
+                                    <Minus className="w-4 h-4" />
+                                </button>
+                                <span className="w-6 text-center font-semibold text-ink">{quantity}</span>
+                                <button onClick={() => setQuantity((q) => q + 1)} className="w-9 h-9 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2">
+                                    <Plus className="w-4 h-4" />
+                                </button>
                             </div>
                         </div>
-                    )}
 
-                    {/* Instructions */}
-                    <div className="bg-blue-900/40 border border-blue-800 rounded-xl p-6 mt-6">
-                        <h3 className="font-semibold text-blue-100 mb-2 flex items-center gap-2">
-                            <Sparkles className="w-4 h-4 text-blue-400" />
-                            {uploadMode ? 'AI Camera Tips:' : 'Fast Scanning:'}
-                        </h3>
-                        {uploadMode ? (
-                            <ul className="space-y-2 text-sm text-blue-200/80">
-                                <li>• Photo of branding/packaging works best</li>
-                                <li>• Ensure good lighting</li>
-                                <li>• AI will extract Name, Brand & Flavor</li>
-                            </ul>
+                        <div className="p-5 flex gap-3">
+                            <button onClick={() => setMode("scan")} className="btn-ghost flex-1 py-3">Scan again</button>
+                            <button onClick={addFound} className="btn-primary flex-1 py-3">Add to inventory</button>
+                        </div>
+                    </div>
+                )}
+
+                {mode === "manual" && (
+                    <div className="pantry-card p-6 rise">
+                        <h2 className="font-display text-2xl font-semibold text-ink mb-1">Add manually</h2>
+                        <p className="text-sm text-ink-soft mb-5">
+                            {form.barcode.startsWith("MANUAL-") ? "No barcode — just type the details." : <>Barcode <span className="font-mono text-ink">{form.barcode}</span> isn’t in any database yet.</>}
+                            {" "}It’ll be saved for instant lookup next time.
+                        </p>
+
+                        <div className="space-y-3">
+                            <Field label="Product name *">
+                                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Toned Milk 1L" className={inputCls} />
+                            </Field>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="Brand">
+                                    <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="e.g. Amul" className={inputCls} />
+                                </Field>
+                                <Field label="Category">
+                                    <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className={inputCls}>
+                                        {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                                    </select>
+                                </Field>
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                                <Field label="Unit">
+                                    <input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="units" className={inputCls} />
+                                </Field>
+                                <Field label="Quantity">
+                                    <input type="number" min={1} value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Math.max(1, +e.target.value || 1) })} className={inputCls} />
+                                </Field>
+                                <Field label="Lasts (days)">
+                                    <input type="number" min={1} value={form.averageDuration} onChange={(e) => setForm({ ...form, averageDuration: Math.max(1, +e.target.value || 1) })} className={inputCls} />
+                                </Field>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-6">
+                            <button onClick={() => setMode("scan")} className="btn-ghost flex-1 py-3">Cancel</button>
+                            <button onClick={addManual} className="btn-primary flex-1 py-3">Add to inventory</button>
+                        </div>
+                    </div>
+                )}
+
+                {(mode === "saving" || mode === "done") && (
+                    <div className="flex flex-col items-center justify-center py-24 text-center rise">
+                        {mode === "saving" ? (
+                            <Loader2 className="w-12 h-12 animate-spin text-terracotta" />
                         ) : (
-                            <ul className="space-y-2 text-sm text-blue-200/80">
-                                <li>• Point camera at barcode</li>
-                                <li>• If not found, use AI Camera fallback</li>
-                                <li>• Works with UPC, EAN & most formats</li>
-                            </ul>
+                            <CheckCircle2 className="w-14 h-14 text-olive" />
                         )}
+                        <p className="mt-4 font-display text-xl text-ink">{mode === "saving" ? "Adding…" : toast}</p>
                     </div>
-                </div>
-            </div>
+                )}
+
+                {toast && mode !== "done" && (
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-ink text-paper text-sm px-4 py-2 rounded-full shadow-lg">
+                        {toast}
+                        <button onClick={() => setToast(null)} className="ml-3 text-paper/60 hover:text-paper">✕</button>
+                    </div>
+                )}
+            </main>
         </div>
+    );
+}
+
+const inputCls = "w-full px-3 py-2 rounded-lg border border-line-strong bg-card focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none text-sm text-ink placeholder:text-ink-faint";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+    return (
+        <label className="block">
+            <span className="block text-xs font-semibold text-ink-soft mb-1">{label}</span>
+            {children}
+        </label>
     );
 }

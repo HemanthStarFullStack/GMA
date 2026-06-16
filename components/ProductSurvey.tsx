@@ -29,10 +29,7 @@ export default function ProductSurvey({
     const isAnomaly = Math.abs(reportedDays - expectedDays) > expectedDays * 0.3;
 
     const handleSubmit = () => {
-        onSubmit({
-            userReportedDays: reportedDays,
-            notes: notes || undefined,
-        });
+        onSubmit({ userReportedDays: reportedDays, notes: notes || undefined });
         onClose();
     };
 
@@ -44,35 +41,28 @@ export default function ProductSurvey({
     ];
 
     return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative">
-                {/* Close Button */}
-                <button
-                    onClick={onClose}
-                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-                >
+        <div className="fixed inset-0 bg-ink/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="pantry-card max-w-md w-full p-6 relative rise">
+                <button onClick={onClose} className="absolute top-4 right-4 text-ink-faint hover:text-ink transition-colors">
                     <X className="w-6 h-6" />
                 </button>
 
-                {/* Header */}
                 <div className="mb-6">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                        How Long Did It Last?
-                    </h2>
-                    <p className="text-gray-600">
-                        Tell us about your <span className="font-semibold">{productName}</span> consumption
+                    <p className="kicker mb-1">Consumption survey</p>
+                    <h2 className="font-display text-2xl font-semibold text-ink">How long did it last?</h2>
+                    <p className="text-ink-soft mt-1">
+                        Tell us about your <span className="font-semibold text-ink">{productName}</span>.
                     </p>
                 </div>
 
-                {/* Quick Buttons */}
                 <div className="grid grid-cols-2 gap-3 mb-4">
                     {quickButtons.map((btn) => (
                         <button
                             key={btn.value}
                             onClick={() => setReportedDays(btn.value)}
-                            className={`px-4 py-3 rounded-lg border-2 font-medium transition-all ${reportedDays === btn.value
-                                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                                    : "border-gray-200 hover:border-gray-300 text-gray-700"
+                            className={`px-4 py-3 rounded-lg border-2 font-semibold transition-all ${reportedDays === btn.value
+                                ? "border-terracotta bg-terracotta/10 text-terracotta"
+                                : "border-line-strong hover:border-ink-faint text-ink-soft"
                                 }`}
                         >
                             {btn.label}
@@ -80,68 +70,47 @@ export default function ProductSurvey({
                     ))}
                 </div>
 
-                {/* Custom Input */}
                 <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Or enter custom duration (days):
-                    </label>
+                    <label className="block text-sm font-semibold text-ink-soft mb-2">Or enter custom duration (days):</label>
                     <input
                         type="number"
                         min="1"
                         value={reportedDays}
                         onChange={(e) => setReportedDays(Math.max(1, parseInt(e.target.value) || 1))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-4 py-2 rounded-lg border border-line-strong bg-card text-ink focus:ring-2 focus:ring-terracotta/40 focus:border-terracotta outline-none"
                     />
                 </div>
 
-                {/* Anomaly Detection */}
                 {isAnomaly && (
-                    <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <p className="text-sm font-medium text-yellow-800 mb-2">
-                            ⚠️ That seems {reportedDays < expectedDays ? "quite fast" : "longer than usual"}!
+                    <div className="mb-4 p-4 bg-amber/10 border border-amber/30 rounded-lg">
+                        <p className="text-sm font-semibold text-amber mb-1">
+                            That seems {reportedDays < expectedDays ? "quite fast" : "longer than usual"}.
                         </p>
-                        <p className="text-sm text-yellow-700 mb-3">
-                            Most families of {familySize} take around {expectedDays} days for this product.
+                        <p className="text-sm text-ink-soft mb-2">
+                            A household of {familySize} usually takes around {expectedDays} days for this.
                         </p>
-                        <button
-                            onClick={() => setShowAnomalyQuestions(!showAnomalyQuestions)}
-                            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                        >
-                            {showAnomalyQuestions ? "Hide" : "Add"} additional details
+                        <button onClick={() => setShowAnomalyQuestions(!showAnomalyQuestions)} className="text-sm text-terracotta hover:text-terracotta-deep font-semibold">
+                            {showAnomalyQuestions ? "Hide" : "Add"} a note
                         </button>
                     </div>
                 )}
 
-                {/* Anomaly Questions */}
                 {showAnomalyQuestions && (
                     <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Additional notes (optional):
-                        </label>
+                        <label className="block text-sm font-semibold text-ink-soft mb-2">Notes (optional):</label>
                         <textarea
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
-                            placeholder="E.g., Had guests, used for multiple meals, product was smaller than usual..."
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                            placeholder="E.g., had guests, used for multiple meals…"
+                            className="w-full px-4 py-2 rounded-lg border border-line-strong bg-card text-ink focus:ring-2 focus:ring-terracotta/40 focus:border-terracotta outline-none resize-none"
                             rows={3}
                         />
                     </div>
                 )}
 
-                {/* Action Buttons */}
                 <div className="flex gap-3">
-                    <button
-                        onClick={onClose}
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleSubmit}
-                        className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-medium hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl"
-                    >
-                        Submit
-                    </button>
+                    <button onClick={onClose} className="btn-ghost flex-1 py-2.5">Cancel</button>
+                    <button onClick={handleSubmit} className="btn-primary flex-1 py-2.5">Submit</button>
                 </div>
             </div>
         </div>

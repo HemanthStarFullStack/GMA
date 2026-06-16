@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, History as HistoryIcon, Loader2 } from "lucide-react";
+import { ArrowLeft, History as HistoryIcon, Loader2, Package } from "lucide-react";
 import { format } from "date-fns";
 import UserMenu from "@/components/UserMenu";
 
@@ -18,9 +18,7 @@ export default function HistoryPage() {
         try {
             const res = await fetch('/api/history');
             const data = await res.json();
-            if (data.success) {
-                setLogs(data.data);
-            }
+            if (data.success) setLogs(data.data);
         } catch (error) {
             console.error('Failed to fetch history:', error);
         } finally {
@@ -29,63 +27,50 @@ export default function HistoryPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Header */}
-            <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-                <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+        <div className="min-h-screen">
+            <header className="bg-paper/85 backdrop-blur border-b border-line sticky top-0 z-10">
+                <div className="container mx-auto px-5 py-4 flex items-center justify-between">
+                    <Link href="/" className="flex items-center gap-2 text-ink-soft hover:text-ink">
                         <ArrowLeft className="w-5 h-5" />
                         <span className="font-medium">Back</span>
                     </Link>
-                    <h1 className="text-xl font-bold text-gray-900">Consumption History</h1>
+                    <h1 className="font-display text-2xl font-semibold text-ink">History</h1>
                     <UserMenu />
                 </div>
-            </div>
+            </header>
 
-            {/* Content */}
-            <div className="container mx-auto px-4 py-6">
+            <main className="container mx-auto px-5 py-8 max-w-2xl">
                 {loading ? (
-                    <div className="flex justify-center py-12">
-                        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                    </div>
+                    <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-terracotta" /></div>
                 ) : logs.length === 0 ? (
-                    <div className="text-center py-12">
-                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <HistoryIcon className="w-8 h-8 text-gray-400" />
+                    <div className="text-center py-16 rise">
+                        <div className="w-16 h-16 bg-paper-2 border border-line rounded-full flex items-center justify-center mx-auto mb-4">
+                            <HistoryIcon className="w-8 h-8 text-ink-faint" />
                         </div>
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No history yet</h3>
-                        <p className="text-gray-500">Items you mark as consumed will appear here.</p>
+                        <h3 className="font-display text-2xl font-semibold text-ink mb-2">No history yet</h3>
+                        <p className="text-ink-soft">Items you mark as consumed will appear here.</p>
                     </div>
                 ) : (
-                    <div className="space-y-4">
-                        {logs.map((log: any) => (
-                            <div key={log._id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                                <div className="flex gap-4 p-4">
-                                    {/* Product Image */}
-                                    {log.productDetails?.imageUrl && (
-                                        <img
-                                            src={log.productDetails.imageUrl}
-                                            alt={log.productDetails.name}
-                                            className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
-                                        />
-                                    )}
-
-                                    {/* Product Details */}
+                    <div className="space-y-3">
+                        {logs.map((log: any, i: number) => (
+                            <div key={log._id} className="pantry-card overflow-hidden rise" style={{ animationDelay: `${i * 40}ms` }}>
+                                <div className="flex gap-4 p-4 items-center">
+                                    <div className="w-16 h-16 rounded-xl bg-paper-2 border border-line flex items-center justify-center overflow-hidden flex-shrink-0">
+                                        {log.productDetails?.imageUrl ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={log.productDetails.imageUrl} alt={log.productDetails.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <Package className="w-7 h-7 text-ink-faint" strokeWidth={1.6} />
+                                        )}
+                                    </div>
                                     <div className="flex-1 min-w-0">
-                                        <h3 className="font-semibold text-gray-900 text-lg truncate">
+                                        {log.productDetails?.brand && <p className="kicker truncate">{log.productDetails.brand}</p>}
+                                        <h3 className="font-display text-lg font-semibold text-ink truncate">
                                             {log.productDetails?.name || `Product ${log.productId.slice(0, 8)}`}
                                         </h3>
-                                        <p className="text-sm text-gray-600">
-                                            {log.productDetails?.brand || 'Unknown Brand'}
-                                            {log.productDetails?.flavor && ` • ${log.productDetails.flavor}`}
-                                        </p>
-                                        <div className="mt-2 flex items-center gap-4 text-sm">
-                                            <span className="text-gray-500">
-                                                Consumed: {format(new Date(log.consumedDate), 'MMM d, yyyy')}
-                                            </span>
-                                            <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
-                                                Lasted {log.durationDays} days
-                                            </span>
+                                        <div className="mt-1 flex items-center gap-3 text-sm">
+                                            <span className="text-ink-faint">{format(new Date(log.consumedDate), 'MMM d, yyyy')}</span>
+                                            <span className="pill bg-olive/10 text-olive">Lasted {log.durationDays} days</span>
                                         </div>
                                     </div>
                                 </div>
@@ -93,7 +78,7 @@ export default function HistoryPage() {
                         ))}
                     </div>
                 )}
-            </div>
+            </main>
         </div>
     );
 }

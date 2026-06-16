@@ -3,130 +3,120 @@ import connectDB from '@/lib/mongodb';
 import { ConsumptionLog, Inventory, Product } from '@/lib/models';
 import { auth } from '@/auth';
 
+/**
+ * Consumption analytics + run-out predictions.
+ *
+ * Predictions are rhythm-based: from a product's past consumption logs we learn an
+ * average duration, derive a consumption rate, and project days-until-empty against
+ * current stock. This tolerates gaps in purchase data — it models the flow, not events.
+ */
+
 export async function GET() {
     try {
         const session = await auth();
-        if (!session || !session.user || !session.user.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!session?.user?.id) {
+            return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
         }
 
         await connectDB();
+        const userId = session.user.id;
 
-        // Get ALL inventory items (current)
-        const currentInventory = await Inventory.find({ userId: session.user.id }).lean();
+        const [currentInventory, consumptionLogs] = await Promise.all([
+            Inventory.find({ userId }).lean(),
+            ConsumptionLog.find({ userId }).lean(),
+        ]);
 
-        // Get ALL consumption logs
-        const consumptionLogs = await ConsumptionLog.find({ userId: session.user.id }).lean();
+        // Join product details once, by barcode (productId === barcode).
+        const barcodes = [
+            ...new Set([...currentInventory.map((i) => i.productId), ...consumptionLogs.map((l) => l.productId)]),
+        ];
+        const products = await Product.find({ barcode: { $in: barcodes } }).lean();
+        const productMap = new Map(products.map((p) => [p.barcode, p]));
 
-        // Build a map of all unique products
-        const productsMap = new Map();
+        const detailsFor = (barcode: string) => {
+            const p = productMap.get(barcode);
+            return {
+                name: p?.name || `Product ${barcode.slice(0, 8)}`,
+                brand: p?.brand || '-',
+                category: p?.category || 'Other',
+                imageUrl: p?.imageUrl || null,
+                defaultUnit: p?.defaultUnit || 'units',
+            };
+        };
 
-        // Add products from current inventory
+        const map = new Map<string, any>();
+
+        // Aggregate current stock per product (sum quantities).
         for (const item of currentInventory) {
-            const productId = item.productId;
-            if (!productsMap.has(productId)) {
-                productsMap.set(productId, {
-                    productId,
-                    name: item.productDetails?.name || 'Unknown Product',
-                    brand: item.productDetails?.brand || '-',
-                    category: item.productDetails?.category || 'Other',
-                    imageUrl: item.productDetails?.imageUrl,
+            const id = item.productId;
+            if (!map.has(id)) {
+                const d = detailsFor(id);
+                map.set(id, {
+                    productId: id,
+                    ...d,
+                    unit: item.unit || d.defaultUnit,
                     status: 'in_stock',
-                    currentStock: item.quantity,
-                    unit: item.unit,
+                    currentStock: 0,
                     purchaseDate: item.purchaseDate,
-                    consumptionHistory: {
-                        totalConsumed: 0,
-                        timesConsumed: 0,
-                        averageDurationDays: 0,
-                        lastConsumed: null
-                    },
-                    predictions: null
+                    consumptionHistory: { totalConsumed: 0, timesConsumed: 0, averageDurationDays: 0, lastConsumed: null },
+                    predictions: null,
                 });
             }
+            map.get(id).currentStock += item.quantity;
         }
 
-        // Add products from consumption logs
+        // Fold in consumption history.
         for (const log of consumptionLogs) {
-            const productId = log.productId;
-
-            if (!productsMap.has(productId)) {
-                // Product consumed but not in current inventory
-                // Try to find product details from inventory first
-                let productDetails = currentInventory.find(inv => inv.productId === productId)?.productDetails;
-
-                // If not in inventory, query Product collection
-                if (!productDetails) {
-                    const productDoc = await Product.findOne({ barcode: productId });
-                    if (productDoc) {
-                        productDetails = {
-                            name: productDoc.name,
-                            brand: productDoc.brand,
-                            category: productDoc.category,
-                            imageUrl: productDoc.imageUrl
-                        };
-                    }
-                }
-
-                productsMap.set(productId, {
-                    productId,
-                    name: productDetails?.name || `Product ${productId.slice(0, 8)}`,
-                    brand: productDetails?.brand || '-',
-                    category: productDetails?.category || 'Other',
-                    imageUrl: productDetails?.imageUrl,
+            const id = log.productId;
+            if (!map.has(id)) {
+                const d = detailsFor(id);
+                map.set(id, {
+                    productId: id,
+                    ...d,
+                    unit: d.defaultUnit,
                     status: 'out_of_stock',
                     currentStock: 0,
-                    unit: 'units',
                     purchaseDate: null,
-                    consumptionHistory: {
-                        totalConsumed: 0,
-                        timesConsumed: 0,
-                        averageDurationDays: 0,
-                        lastConsumed: null
-                    },
-                    predictions: null
+                    consumptionHistory: { totalConsumed: 0, timesConsumed: 0, averageDurationDays: 0, lastConsumed: null },
+                    predictions: null,
                 });
             }
-
-            // Update consumption history
-            const product = productsMap.get(productId);
-            product.consumptionHistory.totalConsumed += 1; // Each log = 1 unit consumed
+            const product = map.get(id);
+            product.consumptionHistory.totalConsumed += 1;
             product.consumptionHistory.timesConsumed += 1;
             product.consumptionHistory.averageDurationDays += log.durationDays || 0;
-
             const logDate = new Date(log.consumedDate);
             if (!product.consumptionHistory.lastConsumed || logDate > new Date(product.consumptionHistory.lastConsumed)) {
                 product.consumptionHistory.lastConsumed = log.consumedDate;
             }
         }
 
-        // Calculate averages and predictions for each product
-        const products = Array.from(productsMap.values()).map(product => {
-            // Calculate average duration
-            if (product.consumptionHistory.timesConsumed > 0) {
-                product.consumptionHistory.averageDurationDays =
-                    Math.round(product.consumptionHistory.averageDurationDays / product.consumptionHistory.timesConsumed);
+        const result = Array.from(map.values()).map((product) => {
+            const h = product.consumptionHistory;
+            if (h.timesConsumed > 0) {
+                h.averageDurationDays = Math.round(h.averageDurationDays / h.timesConsumed);
             }
 
-            // Calculate predictions if product is in stock
-            if (product.status === 'in_stock' && product.consumptionHistory.averageDurationDays > 0) {
-                const consumptionRate = 1 / product.consumptionHistory.averageDurationDays; // units per day
-                const daysUntilEmpty = product.currentStock / consumptionRate;
-                const restockDate = new Date(Date.now() + daysUntilEmpty * 24 * 60 * 60 * 1000);
+            // Fall back to the catalogue's averageDuration if there's stock but no logs yet.
+            let avgDuration = h.averageDurationDays;
+            if (product.status === 'in_stock' && avgDuration <= 0) {
+                avgDuration = productMap.get(product.productId)?.averageDuration || 0;
+            }
 
+            if (product.status === 'in_stock' && avgDuration > 0) {
+                const consumptionRate = 1 / avgDuration; // units/day
+                const daysUntilEmpty = product.currentStock / consumptionRate;
                 product.predictions = {
                     consumptionRate: Math.round(consumptionRate * 100) / 100,
                     daysUntilEmpty: Math.round(daysUntilEmpty * 10) / 10,
-                    restockDate: restockDate.toISOString(),
-                    needsRestock: daysUntilEmpty < 7
+                    restockDate: new Date(Date.now() + daysUntilEmpty * 86400000).toISOString(),
+                    needsRestock: daysUntilEmpty < 7,
                 };
             }
-
             return product;
         });
 
-        // Sort: in stock first, then by name
-        products.sort((a, b) => {
+        result.sort((a, b) => {
             if (a.status !== b.status) return a.status === 'in_stock' ? -1 : 1;
             return a.name.localeCompare(b.name);
         });
@@ -134,20 +124,17 @@ export async function GET() {
         return NextResponse.json({
             success: true,
             data: {
-                products,
+                products: result,
                 stats: {
-                    totalProducts: products.length,
-                    inStock: products.filter(p => p.status === 'in_stock').length,
-                    outOfStock: products.filter(p => p.status === 'out_of_stock').length,
-                    needRestock: products.filter(p => p.predictions?.needsRestock).length
-                }
-            }
+                    totalProducts: result.length,
+                    inStock: result.filter((p) => p.status === 'in_stock').length,
+                    outOfStock: result.filter((p) => p.status === 'out_of_stock').length,
+                    needRestock: result.filter((p) => p.predictions?.needsRestock).length,
+                },
+            },
         });
     } catch (error: any) {
         console.error('Analytics error:', error);
-        return NextResponse.json({
-            success: false,
-            error: error.message
-        }, { status: 500 });
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }
