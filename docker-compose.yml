@@ -42,9 +42,10 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-changeme}
       MONGO_INITDB_DATABASE: ${MONGO_DB:-gma}
-    ports:
-      # Bind to localhost only — don't expose the DB on all interfaces.
-      - "127.0.0.1:27017:27017"
+    # Not published to the host — the app reaches it over the compose network.
+    # Use the `dev` profile's mongo-express, or add a port mapping, for access.
+    expose:
+      - "27017"
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb

@@ -1,0 +1,44 @@
+# Production overlay — adds the Caddy HTTPS reverse proxy in front of the app.
+#
+# Usage:
+#   cp .env.example .env   # set APP_DOMAIN, LETSENCRYPT_EMAIL, AUTH_SECRET, OAuth...
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Prereqs for public HTTPS:
+#   - DNS A/AAAA record for APP_DOMAIN -> this host's public IP
+#   - Ports 80 and 443 open/forwarded to this host
+#   - Google OAuth redirect URI set to https://APP_DOMAIN/api/auth/callback/google
+
+services:
+  app:
+    # Not published to the host — only Caddy (same Docker network) reaches it.
+    ports: !override []
+    environment:
+      # Public URL so NextAuth builds correct OAuth callbacks behind the proxy.
+      AUTH_URL: https://${APP_DOMAIN:?set APP_DOMAIN in .env}
+      NEXTAUTH_URL: https://${APP_DOMAIN}
+      AUTH_TRUST_HOST: "true"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: gma-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

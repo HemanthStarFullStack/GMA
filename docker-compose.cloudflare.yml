@@ -1,0 +1,35 @@
+# Cloudflare Tunnel overlay — exposes the app publicly over HTTPS with NO public
+# IP, NO port forwarding, and NO TLS cert management (Cloudflare terminates TLS
+# at its edge). Use this INSTEAD of docker-compose.prod.yml (Caddy).
+#
+# Setup:
+#   1. Cloudflare dashboard → Zero Trust → Networks → Tunnels → Create a tunnel.
+#   2. Copy the tunnel token into .env as TUNNEL_TOKEN=...
+#   3. In the tunnel's "Public Hostname" tab, add your subdomain and point it at
+#      the service URL:   http://app:3000
+#      (cloudflared shares this compose network, so it reaches the app by name.)
+#   4. Run:
+#      docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d
+#
+# Set NEXTAUTH_URL/AUTH_URL to https://<subdomain> and add
+#   https://<subdomain>/api/auth/callback/google
+# as a Google OAuth redirect URI.
+
+services:
+  app:
+    # No host port needed — only cloudflared (same network) reaches the app.
+    ports: !override []
+    environment:
+      AUTH_URL: https://${APP_DOMAIN:?set APP_DOMAIN in .env}
+      NEXTAUTH_URL: https://${APP_DOMAIN}
+      AUTH_TRUST_HOST: "true"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: gma-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      - app
