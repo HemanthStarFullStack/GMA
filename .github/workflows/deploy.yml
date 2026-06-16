@@ -1,0 +1,27 @@
+name: Deploy
+
+# Auto-deploy to the self-hosted machine AFTER CI passes on main.
+# Runs on a self-hosted runner on the host box, so it can reach Docker and the
+# existing project directory. No public ports / no cloud cost.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  deploy:
+    # Only deploy if the CI run succeeded.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest and redeploy
+        shell: pwsh
+        run: |
+          Set-Location "C:\Users\91834\Desktop\GMA"
+          git fetch origin main
+          # Fast-forward only: fails safely (no data loss) if the working tree
+          # has diverged/uncommitted changes, instead of clobbering them.
+          git pull --ff-only origin main
+          docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d --build
+          docker image prune -f
