@@ -1,22 +1,35 @@
 # Environment Setup
 
-Create a file named `.env.local` in the project root with the following variables.
-(`.env*` is gitignored — never commit real secrets.)
+All configuration is via environment variables. Copy the template and fill it in
+(`.env*` is gitignored — never commit real secrets):
 
-```env
-# --- MongoDB ---------------------------------------------------------------
-# Local Docker (see docker-compose.yml) or a MongoDB Atlas connection string.
-MONGODB_URI=mongodb://admin:sinti_password_2024@localhost:27017/sinti_v2?authSource=admin
-
-# --- NextAuth --------------------------------------------------------------
-# Generate one with:  npx auth secret
-AUTH_SECRET=replace_with_generated_secret
-
-# --- Google OAuth ----------------------------------------------------------
-# Create credentials at https://console.cloud.google.com/apis/credentials
-# Authorized redirect URI:  http://localhost:3000/api/auth/callback/google
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
+```bash
+cp .env.example .env        # for docker compose
+cp .env.example .env.local  # for `npm run dev`
 ```
 
-No AI / vision API keys are required — the app is intentionally AI-free.
+See [`.env.example`](.env.example) for the full, documented list. The essentials:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `MONGODB_URI` | ✅ | MongoDB connection string (Atlas or the compose `mongodb` service) |
+| `AUTH_SECRET` | ✅ | NextAuth signing secret — `npx auth secret` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | prod | Google OAuth sign-in |
+| `GEMINI_API_KEY` | optional | Primary AI predictor; falls back to local LLM → heuristic if unset |
+| `OLLAMA_URL` / `OLLAMA_MODEL` | optional | Local LLM fallback (Ollama). `LOCAL_LLM_ENABLED=false` to disable |
+| `ADMIN_SECRET` | optional | Enables `/api/admin/*`; routes return 404 if unset |
+
+In development a **Test Account** credentials provider is available (no Google needed);
+it is automatically disabled when `NODE_ENV=production`.
+
+## Running with Docker
+
+```bash
+cp .env.example .env        # then edit AUTH_SECRET etc.
+docker compose up -d --build         # app + mongodb
+docker compose --profile dev up -d   # also start mongo-express on :8081
+```
+
+The app serves on http://localhost:3000 and exposes a health probe at
+`/api/health`. The local-LLM fallback expects Ollama on the host
+(`http://host.docker.internal:11434`); set `LOCAL_LLM_ENABLED=false` to skip it.

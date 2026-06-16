@@ -1,6 +1,6 @@
-// Hardcoded by request — free key, app is not public. Hardcode wins over any
-// (possibly stale) GEMINI_API_KEY in the environment so categorisation is reliable.
-const GEMINI_API_KEY = 'AIzaSyATZvOx3_u-P87Rbu_Bt_irnBze7SXZ3Qw';
+// Read from the environment. If unset, prediction silently falls through to the
+// local LLM tier and then the heuristic — the app never hard-fails on a missing key.
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 // Try these in order. Each model has its OWN per-minute + per-day free-tier
 // quota bucket, so when a burst of scans rate-limits the first model the

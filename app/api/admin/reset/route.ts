@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { Product, Inventory, ConsumptionLog } from '@/lib/models';
+import { requireAdmin } from '@/lib/adminGuard';
 
 /**
  * One-shot data reset for a fresh start.
@@ -16,6 +17,9 @@ import { Product, Inventory, ConsumptionLog } from '@/lib/models';
  * fire by accident. Safe to call repeatedly.
  */
 export async function POST(request: Request) {
+    const denied = requireAdmin(request);
+    if (denied) return denied;
+
     const { searchParams } = new URL(request.url);
     if (searchParams.get('confirm') !== 'RESET') {
         return NextResponse.json(

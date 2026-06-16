@@ -1,12 +1,20 @@
 {
-  "name": "sinti-v2",
-  "version": "0.2.0",
+  "name": "gma",
+  "version": "0.3.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "docker:build": "docker build -t gma:latest .",
+    "docker:up": "docker compose up -d --build",
+    "docker:dev": "docker compose --profile dev up -d --build",
+    "docker:down": "docker compose down"
   },
   "dependencies": {
     "@auth/mongodb-adapter": "^3.11.1",

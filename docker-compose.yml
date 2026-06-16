@@ -1,16 +1,50 @@
-version: '3.8'
-
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gma:latest
+    container_name: gma-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      # App talks to the mongodb service over the compose network.
+      MONGODB_URI: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-changeme}@mongodb:27017/${MONGO_DB:-gma}?authSource=admin
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      AUTH_TRUST_HOST: "true"
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ADMIN_SECRET: ${ADMIN_SECRET:-}
+      # Local-LLM fallback: by default use Ollama running on the host machine.
+      # Set LOCAL_LLM_ENABLED=false to disable the tier entirely.
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      LOCAL_LLM_ENABLED: ${LOCAL_LLM_ENABLED:-true}
+    extra_hosts:
+      # Lets the container reach the host's Ollama on Linux too.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Persist user uploads across restarts.
+      - gma_uploads:/app/public/uploads
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
   mongodb:
     image: mongo:7.0
-    container_name: sinti-v2-mongodb
-    restart: always
+    container_name: gma-mongodb
+    restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: sinti_password_2024
-      MONGO_INITDB_DATABASE: sinti_v2
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-changeme}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-gma}
     ports:
-      - "27017:27017"
+      # Bind to localhost only — don't expose the DB on all interfaces.
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
@@ -20,22 +54,28 @@ services:
       timeout: 5s
       retries: 5
 
+  # Optional DB admin UI — only starts with:  docker compose --profile dev up
   mongo-express:
     image: mongo-express:latest
-    container_name: sinti-v2-mongo-express
-    restart: always
+    container_name: gma-mongo-express
+    restart: unless-stopped
+    profiles: ["dev"]
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
-      ME_CONFIG_MONGODB_ADMINPASSWORD: sinti_password_2024
-      ME_CONFIG_MONGODB_URL: mongodb://admin:sinti_password_2024@mongodb:27017/
-      ME_CONFIG_BASICAUTH: false
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD:-changeme}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-changeme}@mongodb:27017/
+      ME_CONFIG_BASICAUTH: "false"
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
 
 volumes:
   mongodb_data:
     driver: local
   mongodb_config:
+    driver: local
+  # Persistent store for user uploads (public/uploads).
+  gma_uploads:
     driver: local

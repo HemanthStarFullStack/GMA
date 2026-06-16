@@ -2,11 +2,15 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { Product } from '@/lib/models';
 import { predictConsumptionDays } from '@/lib/gemini';
+import { requireAdmin } from '@/lib/adminGuard';
 
 // One-shot endpoint: updates averageDuration for every product still at the
 // default 14-day placeholder. Safe to call multiple times — skips products
 // that already have a real prediction.
-export async function POST() {
+export async function POST(request: Request) {
+    const denied = requireAdmin(request);
+    if (denied) return denied;
+
     await connectDB();
 
     const stale = await Product.find({ averageDuration: 14 }).lean();

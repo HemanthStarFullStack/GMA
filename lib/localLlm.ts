@@ -9,13 +9,17 @@ import { CATEGORIES, normalizeCategory, type ProductMeta } from './gemini';
  * running the whole tier is skipped (returns null) without error.
  */
 
-const OLLAMA_URL = 'http://localhost:11434';
-const MODEL = 'llama3.2:3b'; // light enough to fit a 4GB GPU; tool-calling capable
+// Configurable so the model can live on the host, another container, or a remote
+// box. In Docker, point this at http://host.docker.internal:11434 (host Ollama).
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b'; // light enough for a 4GB GPU; tool-calling capable
+const ENABLED = process.env.LOCAL_LLM_ENABLED !== 'false'; // opt-out switch
 
 // ── Reachability ─────────────────────────────────────────────────────────────
 // Cheap probe so a missing/stopped Ollama never blocks a scan for long.
 let lastProbe = { at: 0, ok: false };
 async function ollamaReachable(): Promise<boolean> {
+    if (!ENABLED) return false;
     if (Date.now() - lastProbe.at < 30_000) return lastProbe.ok; // cache 30s
     try {
         const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(1500) });
