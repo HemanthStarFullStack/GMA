@@ -60,7 +60,10 @@ export async function GET(request: Request) {
             let averageDuration = cached.averageDuration ?? 14;
             let category = cached.category || 'Other';
             if (!cached.aiPredicted) {
-                const meta = await predictProductMeta(cached.name, cached.brand || '', category, cached.defaultUnit || 'units');
+                const meta = await predictProductMeta(cached.name, cached.brand || '', category, cached.defaultUnit || 'units', {
+                    flavor: cached.flavor || undefined,
+                    price: cached.price || undefined,
+                });
                 if (meta.predicted) {
                     averageDuration = meta.averageDuration;
                     category = meta.category;
@@ -78,6 +81,7 @@ export async function GET(request: Request) {
                     name: cached.name,
                     brand: cached.brand || '',
                     flavor: cached.flavor || '',
+                    price: cached.price || '',
                     category,
                     imageUrl: cached.imageUrl || null,
                     unit: cached.defaultUnit || 'units',
@@ -157,8 +161,10 @@ export async function GET(request: Request) {
                 productData.brand || '',
                 productData.category,
                 productData.unit || 'units',
+                { flavor: productData.flavor || undefined },
             );
             productData.category = category;
+            productData.price = '';
 
             Product.findOneAndUpdate(
                 { barcode },

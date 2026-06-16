@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BarcodeScanner from "@/components/BarcodeScanner";
-import { ArrowLeft, Package, CheckCircle2, Loader2, Minus, Plus } from "lucide-react";
+import { ArrowLeft, Package, CheckCircle2, Loader2, Minus, Plus, Sparkles, ImagePlus, X } from "lucide-react";
 import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
 
@@ -13,36 +13,47 @@ const CATEGORIES = [
     "Cleaning & Household", "Personal Care", "Other",
 ];
 
-type Found = {
+type Mode = "scan" | "confirm" | "manual" | "saving" | "done";
+
+type Form = {
     barcode: string;
     name: string;
     brand: string;
-    flavor?: string;
+    flavor: string;
+    price: string;
     category: string;
-    imageUrl: string | null;
     unit: string;
+    quantity: number;
+    averageDuration: number;
+    imageUrl: string | null;
     source: string;
+    addedBy: "barcode" | "manual";
 };
 
-type Mode = "scan" | "confirm" | "manual" | "saving" | "done";
+const emptyForm = (barcode = ""): Form => ({
+    barcode,
+    name: "",
+    brand: "",
+    flavor: "",
+    price: "",
+    category: "Other",
+    unit: "units",
+    quantity: 1,
+    averageDuration: 14,
+    imageUrl: null,
+    source: "manual",
+    addedBy: "manual",
+});
 
 export default function ScanPage() {
     const router = useRouter();
     const [mode, setMode] = useState<Mode>("scan");
-    const [found, setFound] = useState<Found | null>(null);
-    const [quantity, setQuantity] = useState(1);
     const [toast, setToast] = useState<string | null>(null);
     const [lookingUp, setLookingUp] = useState(false);
-
-    const [form, setForm] = useState({
-        barcode: "",
-        name: "",
-        brand: "",
-        category: "Other",
-        unit: "units",
-        quantity: 1,
-        averageDuration: 14,
-    });
+    const [reestimating, setReestimating] = useState(false);
+    const [uploadingImage, setUploadingImage] = useState(false);
+    const [form, setForm] = useState<Form>(emptyForm());
+    const fileRef = useRef<HTMLInputElement>(null);
 
     const handleScan = async (barcode: string) => {
         setLookingUp(true);
@@ -50,18 +61,31 @@ export default function ScanPage() {
             const res = await fetch(`/api/barcode?barcode=${encodeURIComponent(barcode)}`);
             const data = await res.json();
             if (data.success) {
-                setFound({ ...data.data, source: data.source });
-                setQuantity(1);
+                const x = data.data;
+                setForm({
+                    barcode: x.barcode || barcode,
+                    name: x.name || "",
+                    brand: x.brand || "",
+                    flavor: x.flavor || "",
+                    price: x.price || "",
+                    category: x.category || "Other",
+                    unit: x.unit || "units",
+                    quantity: 1,
+                    averageDuration: x.averageDuration || 14,
+                    imageUrl: x.imageUrl || null,
+                    source: data.source || "barcode",
+                    addedBy: "barcode",
+                });
                 setMode("confirm");
             } else {
                 if (data.code === "RATE_LIMITED") {
                     setToast("Daily lookup limit reached. The product may exist — fill it in manually.");
                 }
-                setForm((f) => ({ ...f, barcode, name: "", brand: "", category: "Other", unit: "units", quantity: 1, averageDuration: 14 }));
+                setForm(emptyForm(barcode));
                 setMode("manual");
             }
         } catch {
-            setForm((f) => ({ ...f, barcode }));
+            setForm(emptyForm(barcode));
             setToast("Barcode lookup failed. Check your connection and add the product manually.");
             setMode("manual");
         } finally {
@@ -70,41 +94,63 @@ export default function ScanPage() {
     };
 
     const openManual = () => {
-        setForm((f) => ({ ...f, barcode: `MANUAL-${Date.now()}`, name: "", brand: "", category: "Other", unit: "units", quantity: 1, averageDuration: 14 }));
+        setForm(emptyForm(`MANUAL-${Date.now()}`));
         setMode("manual");
     };
 
-    const addFound = async () => {
-        if (!found) return;
-        setMode("saving");
+    // Re-run the AI estimate using everything the user has filled in / corrected.
+    const reestimate = async () => {
+        if (!form.name.trim()) {
+            setToast("Enter a product name first.");
+            return;
+        }
+        setReestimating(true);
         try {
-            const res = await fetch("/api/inventory", {
+            const res = await fetch("/api/predict", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    productId: found.barcode,
-                    quantity,
-                    unit: found.unit || "units",
-                    productDetails: {
-                        name: found.name, brand: found.brand, flavor: found.flavor,
-                        category: found.category, imageUrl: found.imageUrl, unit: found.unit,
-                        addedBy: "barcode", source: found.source,
-                    },
+                    name: form.name, brand: form.brand, flavor: form.flavor,
+                    price: form.price, category: form.category, unit: form.unit, size: form.unit,
                 }),
             });
-            if (!res.ok) throw new Error();
-            finish(`${found.name} added`);
+            const data = await res.json();
+            if (data.success) {
+                setForm((f) => ({ ...f, averageDuration: data.data.averageDuration, category: data.data.category || f.category }));
+                setToast(`Updated estimate: ~${data.data.averageDuration} days`);
+            } else {
+                setToast("Couldn't re-estimate — set it manually.");
+            }
         } catch {
-            setToast("Could not add item. Try again.");
-            setMode("confirm");
+            setToast("Couldn't re-estimate — set it manually.");
+        } finally {
+            setReestimating(false);
         }
     };
 
-    const addManual = async () => {
+    const onImageFile = async (file?: File) => {
+        if (!file) return;
+        setUploadingImage(true);
+        try {
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await fetch("/api/upload", { method: "POST", body: fd });
+            const data = await res.json();
+            if (data.success) setForm((f) => ({ ...f, imageUrl: data.url }));
+            else setToast(data.message || "Couldn't upload that image.");
+        } catch {
+            setToast("Couldn't upload that image.");
+        } finally {
+            setUploadingImage(false);
+        }
+    };
+
+    const saveProduct = async () => {
         if (!form.name.trim()) {
             setToast("Please enter a product name.");
             return;
         }
+        const returnMode: Mode = form.addedBy === "manual" ? "manual" : "confirm";
         setMode("saving");
         try {
             const res = await fetch("/api/inventory", {
@@ -115,9 +161,16 @@ export default function ScanPage() {
                     quantity: form.quantity,
                     unit: form.unit || "units",
                     productDetails: {
-                        name: form.name.trim(), brand: form.brand.trim(), category: form.category,
-                        unit: form.unit, averageDuration: Number(form.averageDuration) || 14,
-                        addedBy: "manual", source: "manual",
+                        name: form.name.trim(),
+                        brand: form.brand.trim(),
+                        flavor: form.flavor.trim(),
+                        price: form.price.trim(),
+                        category: form.category,
+                        imageUrl: form.imageUrl,
+                        unit: form.unit,
+                        averageDuration: Number(form.averageDuration) || 14,
+                        addedBy: form.addedBy,
+                        source: form.source,
                     },
                 }),
             });
@@ -125,7 +178,7 @@ export default function ScanPage() {
             finish(`${form.name.trim()} added`);
         } catch {
             setToast("Could not add item. Try again.");
-            setMode("manual");
+            setMode(returnMode);
         }
     };
 
@@ -134,6 +187,9 @@ export default function ScanPage() {
         setToast(msg);
         setTimeout(() => router.push("/inventory"), 1100);
     };
+
+    const isConfirm = mode === "confirm";
+    const isManual = mode === "manual";
 
     return (
         <div className="min-h-screen">
@@ -164,99 +220,138 @@ export default function ScanPage() {
                     </div>
                 )}
 
-                {mode === "confirm" && found && (
-                    <div className="pantry-card overflow-hidden rise">
-                        <div className="p-5 flex gap-4">
-                            <div className="w-24 h-24 rounded-xl bg-paper-2 border border-line flex items-center justify-center overflow-hidden flex-shrink-0">
-                                {found.imageUrl ? (
+                {(isConfirm || isManual) && (
+                    <div className="pantry-card p-6 rise">
+                        <div className="mb-4">
+                            <h2 className="font-display text-2xl font-semibold text-ink">
+                                {isConfirm ? "Confirm details" : "Add manually"}
+                            </h2>
+                            <p className="text-sm text-ink-soft mt-1">
+                                {isConfirm
+                                    ? "Everything's editable — fix anything that's off, then add it."
+                                    : form.barcode.startsWith("MANUAL-")
+                                        ? "No barcode — just type the details."
+                                        : <>Barcode <span className="font-mono text-ink">{form.barcode}</span> isn’t in any database yet.</>}
+                            </p>
+                        </div>
+
+                        {/* Editable image */}
+                        <div className="flex items-center gap-4 mb-4">
+                            <div className="w-24 h-24 rounded-xl bg-paper-2 border border-line flex items-center justify-center overflow-hidden flex-shrink-0 relative">
+                                {uploadingImage ? (
+                                    <Loader2 className="w-7 h-7 animate-spin text-terracotta" />
+                                ) : form.imageUrl ? (
                                     // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={found.imageUrl} alt={found.name} className="w-full h-full object-cover" />
+                                    <img src={form.imageUrl} alt={form.name} className="w-full h-full object-cover" />
                                 ) : (
                                     <Package className="w-10 h-10 text-ink-faint" strokeWidth={1.6} />
                                 )}
                             </div>
-                            <div className="min-w-0">
-                                {found.brand && <p className="kicker">{found.brand}</p>}
-                                <h2 className="font-display text-xl font-semibold text-ink leading-tight">{found.name}</h2>
-                                <span className="inline-block mt-2 pill bg-olive/10 text-olive">
-                                    {found.source === "cache" ? "from your library" : `via ${found.source}`}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="px-5 pb-3">
-                            <label className="block">
-                                <span className="block text-xs font-semibold text-ink-soft mb-1">
-                                    Category <span className="text-ink-faint font-normal">· suggested by AI, adjust if needed</span>
-                                </span>
-                                <select
-                                    value={found.category}
-                                    onChange={(e) => setFound({ ...found, category: e.target.value })}
-                                    className={inputCls}
+                            <div className="flex flex-col gap-2">
+                                <input
+                                    ref={fileRef}
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    className="hidden"
+                                    onChange={(e) => onImageFile(e.target.files?.[0])}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => fileRef.current?.click()}
+                                    disabled={uploadingImage}
+                                    className="btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50"
                                 >
-                                    {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-                                </select>
-                            </label>
-                        </div>
-
-                        <div className="px-5 pb-2 flex items-center justify-between">
-                            <span className="text-sm font-medium text-ink-soft">Quantity</span>
-                            <div className="flex items-center gap-3">
-                                <button onClick={() => setQuantity((q) => Math.max(1, q - 1))} className="w-9 h-9 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2">
-                                    <Minus className="w-4 h-4" />
+                                    <ImagePlus className="w-4 h-4" />
+                                    {form.imageUrl ? "Replace photo" : "Add photo"}
                                 </button>
-                                <span className="w-6 text-center font-semibold text-ink">{quantity}</span>
-                                <button onClick={() => setQuantity((q) => q + 1)} className="w-9 h-9 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2">
-                                    <Plus className="w-4 h-4" />
-                                </button>
+                                {form.imageUrl && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setForm((f) => ({ ...f, imageUrl: null }))}
+                                        className="inline-flex items-center gap-1.5 text-xs text-berry hover:underline"
+                                    >
+                                        <X className="w-3.5 h-3.5" /> Remove photo
+                                    </button>
+                                )}
+                                {isConfirm && (
+                                    <span className="pill bg-olive/10 text-olive w-max">
+                                        {form.source === "cache" ? "from your library" : `via ${form.source}`}
+                                    </span>
+                                )}
                             </div>
                         </div>
-
-                        <div className="p-5 flex gap-3">
-                            <button onClick={() => setMode("scan")} className="btn-ghost flex-1 py-3">Scan again</button>
-                            <button onClick={addFound} className="btn-primary flex-1 py-3">Add to inventory</button>
-                        </div>
-                    </div>
-                )}
-
-                {mode === "manual" && (
-                    <div className="pantry-card p-6 rise">
-                        <h2 className="font-display text-2xl font-semibold text-ink mb-1">Add manually</h2>
-                        <p className="text-sm text-ink-soft mb-5">
-                            {form.barcode.startsWith("MANUAL-") ? "No barcode — just type the details." : <>Barcode <span className="font-mono text-ink">{form.barcode}</span> isn’t in any database yet.</>}
-                            {" "}It’ll be saved for instant lookup next time.
-                        </p>
 
                         <div className="space-y-3">
                             <Field label="Product name *">
-                                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Toned Milk 1L" className={inputCls} />
+                                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Toned Milk" className={inputCls} />
                             </Field>
                             <div className="grid grid-cols-2 gap-3">
                                 <Field label="Brand">
                                     <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="e.g. Amul" className={inputCls} />
                                 </Field>
+                                <Field label="Flavor / variant">
+                                    <input value={form.flavor} onChange={(e) => setForm({ ...form, flavor: e.target.value })} placeholder="e.g. Aqua, Mango" className={inputCls} />
+                                </Field>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="Size / weight">
+                                    <input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="e.g. 1 L, 150 ml, 500 g" className={inputCls} />
+                                </Field>
+                                <Field label="Price">
+                                    <input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="e.g. ₹199" className={inputCls} />
+                                </Field>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
                                 <Field label="Category">
                                     <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className={inputCls}>
                                         {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                                     </select>
                                 </Field>
-                            </div>
-                            <div className="grid grid-cols-3 gap-3">
-                                <Field label="Unit">
-                                    <input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="units" className={inputCls} />
-                                </Field>
                                 <Field label="Quantity">
-                                    <input type="number" min={1} value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Math.max(1, +e.target.value || 1) })} className={inputCls} />
-                                </Field>
-                                <Field label="Lasts (days)">
-                                    <input type="number" min={1} value={form.averageDuration} onChange={(e) => setForm({ ...form, averageDuration: Math.max(1, +e.target.value || 1) })} className={inputCls} />
+                                    <div className="flex items-center gap-3 h-[38px]">
+                                        <button onClick={() => setForm((f) => ({ ...f, quantity: Math.max(1, f.quantity - 1) }))} className="w-9 h-9 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2">
+                                            <Minus className="w-4 h-4" />
+                                        </button>
+                                        <span className="w-6 text-center font-semibold text-ink">{form.quantity}</span>
+                                        <button onClick={() => setForm((f) => ({ ...f, quantity: f.quantity + 1 }))} className="w-9 h-9 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2">
+                                            <Plus className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </Field>
                             </div>
+
+                            {/* Duration — the predicted "time taken to consume", editable + re-estimable */}
+                            <Field label="Typically lasts">
+                                <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-1">
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={form.averageDuration}
+                                            onChange={(e) => setForm({ ...form, averageDuration: Math.max(1, +e.target.value || 1) })}
+                                            className={inputCls}
+                                        />
+                                        <span className="text-sm text-ink-soft whitespace-nowrap">days / unit</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={reestimate}
+                                        disabled={reestimating}
+                                        title="Re-estimate from the details above"
+                                        className="btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm whitespace-nowrap disabled:opacity-50"
+                                    >
+                                        {reestimating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                        Re-estimate
+                                    </button>
+                                </div>
+                                <span className="block text-xs text-ink-faint mt-1">≈ how long one unit lasts your household. AI-suggested — edit if you know better.</span>
+                            </Field>
                         </div>
 
                         <div className="flex gap-3 mt-6">
-                            <button onClick={() => setMode("scan")} className="btn-ghost flex-1 py-3">Cancel</button>
-                            <button onClick={addManual} className="btn-primary flex-1 py-3">Add to inventory</button>
+                            <button onClick={() => setMode("scan")} className="btn-ghost flex-1 py-3">{isConfirm ? "Scan again" : "Cancel"}</button>
+                            <button onClick={saveProduct} className="btn-primary flex-1 py-3">Add to inventory</button>
                         </div>
                     </div>
                 )}

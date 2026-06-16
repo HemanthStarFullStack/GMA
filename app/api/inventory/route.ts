@@ -51,37 +51,40 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, message: 'productId (barcode) is required' }, { status: 400 });
         }
 
-        // Cache the product in the shared catalogue. Don't clobber an existing
-        // entry's good data — only fill in fields on first insert.
+        // Cache/update the product in the shared catalogue. Whatever the user
+        // confirmed on the scan/manual form is authoritative — they may have
+        // corrected the name, size, flavor, price, category, duration or photo —
+        // so $set those fields (overwriting any stale or AI-guessed value).
         const d = body.productDetails;
         if (d) {
+            const set: Record<string, unknown> = {
+                // Confirmed details are trusted; don't let cache-healing overwrite.
+                aiPredicted: true,
+            };
+            if (d.name) set.name = d.name;
+            if (d.brand !== undefined) set.brand = d.brand || '';
+            if (d.flavor !== undefined) set.flavor = d.flavor || '';
+            if (d.price !== undefined) set.price = (d.price ?? '').toString();
+            if (d.category) set.category = d.category;
+            if (d.imageUrl !== undefined) set.imageUrl = d.imageUrl || null;
+            if (d.unit) set.defaultUnit = d.unit;
+            if (d.averageDuration) set.averageDuration = Number(d.averageDuration) || 14;
+
             const setOnInsert: Record<string, unknown> = {
                 barcode,
-                name: d.name || 'Unknown Product',
-                brand: d.brand || '',
-                flavor: d.flavor || '',
-                imageUrl: d.imageUrl || null,
-                defaultUnit: d.unit || 'units',
-                averageDuration: d.averageDuration || 14,
-                // User-entered details (manual add / confirmed form) are trusted,
-                // so don't let the cache-healing step overwrite them with AI.
-                aiPredicted: true,
                 addedBy: d.addedBy || 'barcode',
                 source: d.source || 'barcode',
                 isDemo: false,
             };
+            // Guarantee required fields exist on first insert if not user-supplied.
+            if (!set.name) setOnInsert.name = 'Unknown Product';
+            if (!set.category) setOnInsert.category = 'Other';
 
-            // The category the user confirmed on the scan/manual form is
-            // authoritative — always $set it so it overwrites any stale cached
-            // value (e.g. a wrong category cached before this fix).
-            const update: Record<string, unknown> = { $setOnInsert: setOnInsert };
-            if (d.category) {
-                update.$set = { category: d.category };
-            } else {
-                setOnInsert.category = 'Other';
-            }
-
-            await Product.findOneAndUpdate({ barcode }, update, { upsert: true, new: true });
+            await Product.findOneAndUpdate(
+                { barcode },
+                { $set: set, $setOnInsert: setOnInsert },
+                { upsert: true, new: true },
+            );
         }
 
         const qty = body.quantity || 1;

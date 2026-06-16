@@ -31,12 +31,13 @@ export default function ProductCard({ item, onConsume, onDelete }: ProductCardPr
                     )}
                     <h3
                         className="font-display text-lg font-semibold text-ink leading-tight truncate"
-                        title={product.flavor || product.name || "Unknown Product"}
+                        title={product.name || "Unknown Product"}
                     >
-                        {product.flavor || product.name || "Unknown Product"}
+                        {product.name || "Unknown Product"}
                     </h3>
-                    <div className="mt-1.5 flex items-center gap-2">
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                         <span className="pill bg-olive/10 text-olive">{quantity} {unit}</span>
+                        {product.flavor && <span className="pill bg-paper-2 text-ink-soft">{product.flavor}</span>}
                     </div>
                     <div className="mt-2 flex items-center text-xs text-ink-faint">
                         <Calendar className="w-3 h-3 mr-1" />

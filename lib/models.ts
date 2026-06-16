@@ -70,6 +70,7 @@ export interface IProduct extends Document {
     name: string;
     brand: string;
     flavor?: string;
+    price?: string; // user-entered approx price (free-form, e.g. "₹199"); feeds prediction context
     category: string;
     imageUrl?: string | null;
     defaultUnit: string;
@@ -85,6 +86,7 @@ const ProductSchema = new Schema<IProduct>({
     name: { type: String, required: true },
     brand: { type: String, default: '' },
     flavor: { type: String, default: '' },
+    price: { type: String, default: '' },
     category: { type: String, default: 'Other' },
     imageUrl: { type: String, default: null },
     defaultUnit: { type: String, default: 'units' },

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import { Product, Inventory, ConsumptionLog, User } from '@/lib/models';
 import { auth } from '@/auth';
@@ -45,8 +46,13 @@ export async function POST() {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }
 
-        await connectDB();
         const uid = session.user.id;
+        // The dev test user has no DB record (non-ObjectId id) — nothing to seed.
+        if (!mongoose.Types.ObjectId.isValid(uid)) {
+            return NextResponse.json({ success: true, seeded: false, message: 'No demo for test user' });
+        }
+
+        await connectDB();
 
         // Atomically claim the seed: only the first request to flip demoSeeded
         // false->true proceeds. This is race-safe against React StrictMode's

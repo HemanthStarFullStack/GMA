@@ -33,12 +33,12 @@ const SYSTEM_INSTRUCTION = `You are a household grocery analyst. For ONE purchas
 
 Answer these questions in order:
 1. unitSize — the net quantity of ONE unit as a string: volume, weight, or count (e.g. "1.2 L", "26 g", "pack of 6"). If the size is missing, infer the most common retail size for that product.
-2. servingsPerUnit — how many servings/uses that quantity contains for one person.
-3. dailyUse — how many of those servings one person consumes per day (may be fractional).
+2. servingsPerUnit — how many servings/uses that quantity contains.
+3. dailyUse — servings consumed per day by the WHOLE household. The reference rates below are PER PERSON, so multiply the per-person rate by the household size given in the prompt (more people finish a unit faster). If no household size is given, assume 1 person.
 4. averageDuration — servingsPerUnit / dailyUse, rounded to a WHOLE number of days, minimum 1. Never fractions.
 5. category — EXACTLY ONE string from the fixed list below (copy verbatim).
 
-SIZE MATTERS — scale the duration with the quantity. Reference daily-use rates for one person:
+SIZE & HOUSEHOLD MATTER — scale the duration with both the quantity and the number of people. Reference daily-use rates are PER PERSON (the examples below assume a 1-person household):
 - Soft drinks / juice ~0.5 L/day -> 330 ml can = 1, 500-600 ml = 2, 1 L = 2, 1.2 L = 3, 1.5 L = 3, 2 L = 4, 2.25 L = 5.
 - Milk ~0.3 L/day -> 500 ml = 2, 1 L = 3, 2 L = 6.
 - Cooking oil ~30 ml/day -> 500 ml = 15, 1 L = 30, 5 L = 90.
@@ -92,16 +92,36 @@ const FEW_SHOT_EXAMPLES = [
     },
 ];
 
-function buildPrompt(name: string, brand: string, category: string, unit: string): string {
+/** Optional extra context that sharpens the first estimate when available. */
+export type PredictContext = {
+    flavor?: string;
+    price?: string | number;
+    size?: string; // explicit net size/weight if the caller has a cleaner value than `unit`
+    householdSize?: number; // people in the household — scales how fast a unit is used up
+};
+
+function buildPrompt(name: string, brand: string, category: string, unit: string, extra?: PredictContext): string {
     const examples = FEW_SHOT_EXAMPLES.map(
         (e) => `Product: ${e.product}\nJSON: ${JSON.stringify(e.response)}`,
     ).join('\n\n');
 
-    const productLine = [name, brand, category, unit].filter(Boolean).join(', ');
+    // Pack every signal we have into the product line — more context = a sharper
+    // first prediction. Size/weight and price especially anchor the duration.
+    const parts: string[] = [name, brand].filter(Boolean);
+    const size = (extra?.size || unit || '').trim();
+    if (size && size.toLowerCase() !== 'units') parts.push(size);
+    if (extra?.flavor) parts.push(`${extra.flavor} variant`);
+    if (extra?.price !== undefined && extra?.price !== '' && extra?.price !== null) parts.push(`approx price ${extra.price}`);
+    if (category) parts.push(category);
+    const productLine = parts.join(', ');
+
+    const household = Math.max(1, Math.round(extra?.householdSize || 1));
+    const householdLine = `Household: ${household} ${household === 1 ? 'person' : 'people'}`;
 
     return `${examples}
 
 Product: ${productLine}
+${householdLine}
 JSON:`;
 }
 
@@ -124,13 +144,14 @@ export async function predictProductMeta(
     brand: string,
     categoryHint: string,
     unit: string,
+    extra?: PredictContext,
 ): Promise<ProductMeta> {
     const fallback: ProductMeta = { averageDuration: 14, category: normalizeCategory(categoryHint), predicted: false };
     if (!GEMINI_API_KEY) return fallback;
 
     const body = {
         system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-        contents: [{ role: 'user', parts: [{ text: buildPrompt(name, brand, categoryHint, unit) }] }],
+        contents: [{ role: 'user', parts: [{ text: buildPrompt(name, brand, categoryHint, unit, extra) }] }],
         generationConfig: {
             response_mime_type: 'application/json',
             temperature: 0.1,

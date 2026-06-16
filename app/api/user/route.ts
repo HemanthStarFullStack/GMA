@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import { User } from '@/lib/models';
 import { auth } from '@/auth';
@@ -13,6 +14,14 @@ export async function GET() {
         const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+        }
+
+        // The dev test user has a non-ObjectId id and no DB record — serve defaults.
+        if (!mongoose.Types.ObjectId.isValid(session.user.id)) {
+            return NextResponse.json({
+                success: true,
+                data: { name: session.user.name || 'User', familySize: 1, surveyFrequency: 'occasional', demoSeeded: true, tourCompleted: true },
+            });
         }
 
         await connectDB();
@@ -38,6 +47,15 @@ export async function PUT(request: Request) {
         const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+        }
+
+        // Test user isn't persisted — accept the change as a no-op so the UI works.
+        if (!mongoose.Types.ObjectId.isValid(session.user.id)) {
+            const body = await request.json().catch(() => ({}));
+            return NextResponse.json({
+                success: true,
+                data: { familySize: body.familySize ?? 1, surveyFrequency: body.surveyFrequency ?? 'occasional' },
+            });
         }
 
         await connectDB();
