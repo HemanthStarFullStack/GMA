@@ -10,6 +10,7 @@ export default function SettingsPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [note, setNote] = useState<string | null>(null);
 
     useEffect(() => {
         (async () => {
@@ -28,18 +29,26 @@ export default function SettingsPage() {
         })();
     }, []);
 
+    const setSize = (n: number) => setFamilySize(Math.max(1, Math.min(20, n)));
+
     const handleSave = async () => {
         setSaving(true);
         setSaved(false);
+        setNote(null);
         try {
             const res = await fetch("/api/user", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ familySize, surveyFrequency }),
             });
+            const data = await res.json().catch(() => ({}));
             if (res.ok) {
                 setSaved(true);
                 setTimeout(() => setSaved(false), 2000);
+                const n = data?.data?.reestimating ?? 0;
+                if (n > 0) {
+                    setNote(`Re-estimating shelf-life for ${n} item${n === 1 ? "" : "s"} based on a household of ${familySize}. Your forecasts will update shortly.`);
+                }
             }
         } finally {
             setSaving(false);
@@ -79,9 +88,9 @@ export default function SettingsPage() {
 
                                 <label className="block text-sm font-semibold text-ink-soft mb-2">Family size</label>
                                 <div className="flex items-center gap-4">
-                                    <button onClick={() => setFamilySize(Math.max(1, familySize - 1))} className="w-10 h-10 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2 text-lg">−</button>
+                                    <button onClick={() => setSize(familySize - 1)} className="w-10 h-10 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2 text-lg">−</button>
                                     <span className="font-display text-2xl font-semibold w-8 text-center text-ink">{familySize}</span>
-                                    <button onClick={() => setFamilySize(Math.min(20, familySize + 1))} className="w-10 h-10 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2 text-lg">+</button>
+                                    <button onClick={() => setSize(familySize + 1)} className="w-10 h-10 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2 text-lg">+</button>
                                 </div>
 
                                 <label className="block text-sm font-semibold text-ink-soft mt-6 mb-2">Consumption survey</label>
@@ -106,6 +115,9 @@ export default function SettingsPage() {
                             </div>
                         </section>
 
+                        {note && (
+                            <p className="text-sm text-olive bg-olive/10 border border-olive/20 rounded-xl px-4 py-3 rise">{note}</p>
+                        )}
                     </>
                 )}
             </main>

@@ -1,8 +1,39 @@
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
-import { User } from '@/lib/models';
+import { User, Inventory, Product } from '@/lib/models';
+import { predictProductMeta } from '@/lib/gemini';
 import { auth } from '@/auth';
+
+/**
+ * Re-estimate shelf-life for every active (non-demo) product the user holds,
+ * using their NEW household size. Durations live in the shared catalogue, so we
+ * only refresh the products this user actually has in stock. Runs in the
+ * background (fire-and-forget) so the settings save returns instantly.
+ */
+async function reestimateForHousehold(userId: string, householdSize: number) {
+    const inv = await Inventory.find({ userId, status: 'active', isDemo: { $ne: true } }).select('productId').lean();
+    const barcodes = [...new Set(inv.map((i) => i.productId))];
+    const products = await Product.find({ barcode: { $in: barcodes }, isDemo: { $ne: true } }).lean();
+    for (const p of products) {
+        try {
+            const meta = await predictProductMeta(p.name, p.brand || '', p.category, p.defaultUnit || 'units', {
+                flavor: p.flavor || undefined,
+                price: p.price || undefined,
+                householdSize,
+            });
+            // Only overwrite when the AI actually answered — never clobber with a heuristic.
+            if (meta.predicted) {
+                await Product.updateOne(
+                    { barcode: p.barcode },
+                    { $set: { averageDuration: meta.averageDuration, category: meta.category, aiPredicted: true } },
+                );
+            }
+        } catch (err) {
+            console.warn(`Re-estimate failed for ${p.barcode}:`, err);
+        }
+    }
+}
 
 /**
  * User profile / household settings. Reads and writes the same `users` document
@@ -26,12 +57,13 @@ export async function GET() {
 
         await connectDB();
         const user = await User.findById(session.user.id).lean();
+        const familySize = user?.familySize ?? 1;
 
         return NextResponse.json({
             success: true,
             data: {
                 name: session.user.name || user?.displayName || 'User',
-                familySize: user?.familySize ?? 1,
+                familySize,
                 surveyFrequency: user?.preferences?.surveyFrequency ?? 'occasional',
                 demoSeeded: user?.demoSeeded ?? false,
                 tourCompleted: user?.tourCompleted ?? false,
@@ -60,6 +92,7 @@ export async function PUT(request: Request) {
 
         await connectDB();
         const body = await request.json();
+        const current = await User.findById(session.user.id).select('familySize').lean();
 
         const update: Record<string, any> = {};
         if (typeof body.familySize === 'number') {
@@ -72,14 +105,26 @@ export async function PUT(request: Request) {
             update.tourCompleted = body.tourCompleted;
         }
 
-        const user = await User.findByIdAndUpdate(session.user.id, { $set: update }, { new: true }).lean();
+        // Grab the PREVIOUS doc so we can tell if family size actually changed.
+        const prev = await User.findByIdAndUpdate(session.user.id, { $set: update }, { new: false }).lean();
+        const oldFamily = prev?.familySize ?? 1;
+        const newFamily = typeof update.familySize === 'number' ? update.familySize : oldFamily;
+        const newSurvey = update['preferences.surveyFrequency'] ?? prev?.preferences?.surveyFrequency ?? 'occasional';
+
+        // Family size changed → re-estimate this user's active products for the
+        // new household, in the background so the save returns immediately.
+        let reestimating = 0;
+        if (newFamily !== oldFamily) {
+            const inv = await Inventory.find({ userId: session.user.id, status: 'active', isDemo: { $ne: true } }).select('productId').lean();
+            const barcodes = [...new Set(inv.map((i) => i.productId))];
+            const count = await Product.countDocuments({ barcode: { $in: barcodes }, isDemo: { $ne: true } });
+            reestimating = count;
+            void reestimateForHousehold(session.user.id, newFamily);
+        }
 
         return NextResponse.json({
             success: true,
-            data: {
-                familySize: user?.familySize ?? 1,
-                surveyFrequency: user?.preferences?.surveyFrequency ?? 'occasional',
-            },
+            data: { familySize: newFamily, surveyFrequency: newSurvey, reestimating },
         });
     } catch (error: any) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });

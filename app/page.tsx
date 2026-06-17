@@ -99,19 +99,23 @@ export default async function HomePage() {
                 </section>
 
                 <section className="pb-20">
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        {tiles.map(({ href, label, note, Icon, tint }, i) => (
-                            <Link
-                                key={href}
-                                href={href}
-                                className="pantry-card p-6 group hover:-translate-y-0.5 transition-transform rise"
-                                style={{ animationDelay: `${180 + i * 60}ms` }}
-                            >
-                                <Icon className={`w-8 h-8 ${tint}`} strokeWidth={1.6} />
-                                <h3 className="font-display text-xl font-semibold text-ink mt-4">{label}</h3>
-                                <p className="text-sm text-ink-soft">{note}</p>
-                            </Link>
-                        ))}
+                    <div className="grid lg:grid-cols-12 gap-8 items-end">
+                        <div className="lg:col-span-12">
+                            <div className="grid grid-cols-2 gap-4">
+                                {tiles.map(({ href, label, note, Icon, tint }, i) => (
+                                    <Link
+                                        key={href}
+                                        href={href}
+                                        className="pantry-card p-6 group hover:-translate-y-0.5 transition-transform rise"
+                                        style={{ animationDelay: `${180 + i * 60}ms` }}
+                                    >
+                                        <Icon className={`w-8 h-8 ${tint}`} strokeWidth={1.6} />
+                                        <h3 className="font-display text-xl font-semibold text-ink mt-4">{label}</h3>
+                                        <p className="text-sm text-ink-soft">{note}</p>
+                                    </Link>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 </section>
             </main>
