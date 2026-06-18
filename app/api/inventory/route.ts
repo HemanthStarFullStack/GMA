@@ -69,6 +69,7 @@ export async function POST(request: Request) {
             if (d.imageUrl !== undefined) set.imageUrl = d.imageUrl || null;
             if (d.unit) set.defaultUnit = d.unit;
             if (d.averageDuration) set.averageDuration = Number(d.averageDuration) || 14;
+            if (d.perPersonDailyRate) set.perPersonDailyRate = Number(d.perPersonDailyRate);
 
             const setOnInsert: Record<string, unknown> = {
                 barcode,

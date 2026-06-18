@@ -67,10 +67,10 @@ export async function GET(request: Request) {
                 if (meta.predicted) {
                     averageDuration = meta.averageDuration;
                     category = meta.category;
-                    Product.updateOne(
-                        { barcode },
-                        { $set: { averageDuration, category, aiPredicted: true } },
-                    ).catch((err: unknown) => console.warn('Cache heal failed:', err));
+                    const healSet: Record<string, unknown> = { averageDuration, category, aiPredicted: true };
+                    if (meta.perPersonDailyRate) healSet.perPersonDailyRate = meta.perPersonDailyRate;
+                    Product.updateOne({ barcode }, { $set: healSet })
+                        .catch((err: unknown) => console.warn('Cache heal failed:', err));
                 }
             }
             return NextResponse.json({
@@ -156,13 +156,14 @@ export async function GET(request: Request) {
 
             // Gemini decides both the realistic shelf-life and the category;
             // the DB's category guess is only a fallback hint.
-            const { averageDuration, category, predicted } = await predictProductMeta(
+            const meta = await predictProductMeta(
                 productData.name,
                 productData.brand || '',
                 productData.category,
                 productData.unit || 'units',
                 { flavor: productData.flavor || undefined },
             );
+            const { averageDuration, category, predicted } = meta;
             productData.category = category;
             productData.price = '';
 
@@ -178,6 +179,7 @@ export async function GET(request: Request) {
                         imageUrl: productData.imageUrl || null,
                         defaultUnit: productData.unit || 'units',
                         averageDuration,
+                        ...(meta.perPersonDailyRate ? { perPersonDailyRate: meta.perPersonDailyRate } : {}),
                         aiPredicted: predicted,
                         addedBy: 'barcode',
                         source,

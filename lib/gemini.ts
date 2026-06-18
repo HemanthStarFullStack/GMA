@@ -18,6 +18,7 @@ export type ProductMeta = {
     averageDuration: number;
     category: string;
     predicted: boolean; // true if the AI produced it; false = heuristic fallback
+    perPersonDailyRate?: number; // units consumed per day by 1 person — enables math-only re-estimation on household change
 };
 
 type GeminiPrediction = {
@@ -210,10 +211,18 @@ export async function predictProductMeta(
             const category = normalizeCategory(parsed.category) || fallback.category;
             const averageDuration = forHousehold(perPerson, category);
 
+            // Raw daily rate per person — stored once, used for math-only
+            // re-estimation whenever household size changes (no AI call needed).
+            const perPersonDailyRate =
+                Number.isFinite(parsed.servingsPerUnit) && parsed.servingsPerUnit > 0 &&
+                Number.isFinite(parsed.dailyUse) && parsed.dailyUse > 0
+                    ? parsed.dailyUse / parsed.servingsPerUnit
+                    : 1 / perPerson;
+
             console.log(
-                `Gemini: ${perPerson}d/person -> ${averageDuration}d for ${household}p (${category === 'Personal Care' ? 'personal, no scaling' : `÷${household}`}) · ${category} · "${name}" [${parsed.unitSize} · ${parsed.servingsPerUnit}/${parsed.dailyUse}/day · ${parsed.confidence}]`,
+                `Gemini: ${perPerson}d/person (rate=${perPersonDailyRate.toFixed(4)}) -> ${averageDuration}d for ${household}p (${category === 'Personal Care' ? 'personal, no scaling' : `÷${household}`}) · ${category} · "${name}"`,
             );
-            return { averageDuration, category, predicted: true };
+            return { averageDuration, category, predicted: true, perPersonDailyRate };
         } catch (err) {
             console.warn(`Gemini [${model}] error:`, err);
         }

@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import { User, Inventory, Product } from '@/lib/models';
-import { predictProductMeta } from '@/lib/gemini';
 import { auth } from '@/auth';
 
 /**
@@ -11,40 +10,31 @@ import { auth } from '@/auth';
  * only refresh the products this user actually has in stock. Runs in the
  * background (fire-and-forget) so the settings save returns instantly.
  */
-async function reestimateForHousehold(
-    userId: string,
-    householdSize: number,
-    prevHouseholdSize: number,
-    daysAtPreviousSize: number,
-) {
+// Pure-math re-estimation — no AI calls. Uses the stored perPersonDailyRate
+// (set at scan time) or falls back to linear scaling from the current duration.
+async function reestimateForHousehold(userId: string, newN: number, oldN: number) {
     const inv = await Inventory.find({ userId, status: 'active', isDemo: { $ne: true } }).select('productId').lean();
     const barcodes = [...new Set(inv.map((i) => i.productId))];
-    // Personal Care items are individually used (each person has their own deodorant /
-    // toothpaste / shampoo). Their shelf-life doesn't change with household size.
+    // Personal Care items are per-person — duration never changes with household size.
     const products = await Product.find({
         barcode: { $in: barcodes },
         isDemo: { $ne: true },
         category: { $ne: 'Personal Care' },
-    }).lean();
-    for (const p of products) {
-        try {
-            const meta = await predictProductMeta(p.name, p.brand || '', p.category, p.defaultUnit || 'units', {
-                flavor: p.flavor || undefined,
-                price: p.price || undefined,
-                householdSize,
-                prevHouseholdSize,
-                daysAtPreviousSize,
-            });
-            if (meta.predicted) {
-                await Product.updateOne(
-                    { barcode: p.barcode },
-                    { $set: { averageDuration: meta.averageDuration, category: meta.category, aiPredicted: true } },
-                );
-            }
-        } catch (err) {
-            console.warn(`Re-estimate failed for ${p.barcode}:`, err);
+    }).select('barcode averageDuration perPersonDailyRate').lean();
+
+    await Promise.all(products.map((p) => {
+        let newDuration: number;
+        if (p.perPersonDailyRate && p.perPersonDailyRate > 0) {
+            // Precise: rate was stored at scan time from raw Gemini servings/dailyUse
+            newDuration = Math.max(1, Math.round(1 / (p.perPersonDailyRate * newN)));
+        } else {
+            // Legacy product: no rate stored — scale linearly from current duration
+            newDuration = Math.max(1, Math.round((p.averageDuration * oldN) / newN));
         }
-    }
+        return Product.updateOne({ barcode: p.barcode }, { $set: { averageDuration: newDuration } });
+    }));
+
+    console.log(`Re-estimated ${products.length} products for household ${oldN}→${newN} (math-only, no AI)`);
 }
 
 /**
@@ -125,14 +115,7 @@ export async function PUT(request: Request) {
 
         let reestimating = 0;
         if (newFamily !== oldFamily) {
-            // How long did the household sit at the old size? Used to give the AI
-            // usage-history context so it can confirm or correct its per-person rate.
-            const changedAt = prev?.familySizeChangedAt ? new Date(prev.familySizeChangedAt) : null;
-            const daysAtPreviousSize = changedAt
-                ? Math.floor((Date.now() - changedAt.getTime()) / 86_400_000)
-                : 0;
-
-            // Record the transition so the next change has history to draw on.
+            // Record the transition for audit/history purposes.
             await User.updateOne(
                 { _id: session.user.id },
                 { $set: { prevFamilySize: oldFamily, familySizeChangedAt: new Date() } },
@@ -147,7 +130,7 @@ export async function PUT(request: Request) {
                 category: { $ne: 'Personal Care' },
             });
             reestimating = count;
-            void reestimateForHousehold(session.user.id, newFamily, oldFamily, daysAtPreviousSize);
+            void reestimateForHousehold(session.user.id, newFamily, oldFamily);
         }
 
         return NextResponse.json({

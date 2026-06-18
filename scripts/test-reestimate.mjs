@@ -1,37 +1,52 @@
 /**
  * Stress-test for household-size re-estimation logic.
- * Tests the scaling formula used in lib/gemini.ts.
+ * Tests both the rate-based formula (perPersonDailyRate stored at scan)
+ * and the legacy linear-scaling fallback.
  * Run: node scripts/test-reestimate.mjs
  */
 
-// Mirrors lib/gemini.ts: forHousehold(perPerson, category, household)
-function forHousehold(perPerson, category, household) {
-    // ponytail: personal care = individual use, not shared → no household scaling
-    const shared = category !== 'Personal Care';
-    return Math.max(1, Math.round(perPerson / (shared ? household : 1)));
+// Rate-based (precise): mirrors lib/gemini.ts forHousehold + user/route.ts math
+function rateBasedDuration(perPersonDailyRate, category, household) {
+    if (category === 'Personal Care') return Math.max(1, Math.round(1 / perPersonDailyRate));
+    return Math.max(1, Math.round(1 / (perPersonDailyRate * household)));
+}
+
+// Legacy fallback: linear scale from stored duration at old household size
+function legacyScale(oldDuration, oldN, newN) {
+    return Math.max(1, Math.round((oldDuration * oldN) / newN));
 }
 
 const cases = [
-    // Shared food/beverage — should scale linearly
-    { name: 'Milk 1L: 1→2 people',         perPerson: 3,  cat: 'Dairy & Eggs',        h: 2,  expect: 2  },
-    { name: 'Milk 1L: 1→4 people',         perPerson: 3,  cat: 'Dairy & Eggs',        h: 4,  expect: 1  },
-    { name: 'Rice 5kg: 2→4 people',         perPerson: 34, cat: 'Pantry',              h: 4,  expect: 9  },
-    { name: 'Cooking oil 1L: 1→3 people',   perPerson: 30, cat: 'Pantry',              h: 3,  expect: 10 },
-    { name: 'Cola 2L: 4→8 people (min 1)',  perPerson: 4,  cat: 'Beverages',           h: 8,  expect: 1  },
-    { name: 'Chips 26g: 6 people (min 1)',  perPerson: 1,  cat: 'Snacks',              h: 6,  expect: 1  },
-    { name: 'Atta 10kg: 1→4 then →2',       perPerson: 45, cat: 'Pantry',              h: 2,  expect: 23 },
-    // Personal Care — must NOT scale with household size
-    { name: 'Deodorant 150ml: 1→4 people',  perPerson: 45, cat: 'Personal Care',       h: 4,  expect: 45 },
-    { name: 'Toothpaste 200g: 2→4 people',  perPerson: 60, cat: 'Personal Care',       h: 4,  expect: 60 },
-    { name: 'Shampoo 340ml: 1→5 people',    perPerson: 60, cat: 'Personal Care',       h: 5,  expect: 60 },
+    // ── Rate-based (perPersonDailyRate stored at scan) ────────────────────────
+    // Milk 1L: Gemini → servingsPerUnit=4, dailyUse=1.3 → rate=0.325
+    { label: 'Milk 1L 1→2p (rate)',   fn: () => rateBasedDuration(0.325, 'Dairy & Eggs', 2),  expect: 2  },
+    { label: 'Milk 1L 1→4p (rate)',   fn: () => rateBasedDuration(0.325, 'Dairy & Eggs', 4),  expect: 1  },
+    // Rice 5kg: servingsPerUnit=66, dailyUse=1.5 → rate≈0.0227
+    { label: 'Rice 5kg 2→4p (rate)',  fn: () => rateBasedDuration(0.0227, 'Pantry', 4),       expect: 11 },
+    // Cola 2L: servingsPerUnit=8, dailyUse=2 → rate=0.25
+    { label: 'Cola 2L 4→8p (rate)',   fn: () => rateBasedDuration(0.25, 'Beverages', 8),      expect: 1  },
+    // Deodorant: personal care, must NOT scale
+    { label: 'Deodorant 1→4p (rate)', fn: () => rateBasedDuration(1/45, 'Personal Care', 4),  expect: 45 },
+    // Toothpaste: personal care
+    { label: 'Toothpaste 2→4p (rate)',fn: () => rateBasedDuration(1/60, 'Personal Care', 4),  expect: 60 },
+
+    // ── Legacy linear scaling (no rate stored, scale from oldDuration) ────────
+    // 30-day product: household doubles → 15 days
+    { label: 'Oil 1L 1→2p (legacy)',  fn: () => legacyScale(30, 1, 2),                        expect: 15 },
+    // 30-day product: household halves → 60 days
+    { label: 'Oil 1L 2→1p (legacy)',  fn: () => legacyScale(15, 2, 1),                        expect: 30 },
+    // Round-trip: 45d at 1p → 2p(=23) → 1p. Integer rounding means 23×2=46, not 45.
+    // This is expected — rate-based avoids this; legacy scaling has ±1 drift.
+    { label: 'Atta round-trip (legacy)', fn: () => legacyScale(legacyScale(45, 1, 2), 2, 1),  expect: 46 },
+    // Minimum floor: very large household
+    { label: 'Cola 2L 1→20p (legacy)',fn: () => legacyScale(4, 1, 20),                        expect: 1  },
 ];
 
-let passed = 0;
-let failed = 0;
+let passed = 0, failed = 0;
 for (const c of cases) {
-    const got = forHousehold(c.perPerson, c.cat, c.h);
+    const got = c.fn();
     const ok = got === c.expect;
-    console.log(`${ok ? '✓' : '✗'} ${c.name}: got ${got}, want ${c.expect}`);
+    console.log(`${ok ? '✓' : '✗'} ${c.label}: got ${got}, want ${c.expect}`);
     ok ? passed++ : failed++;
 }
 

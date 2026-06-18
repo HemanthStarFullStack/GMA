@@ -78,7 +78,8 @@ export interface IProduct extends Document {
     category: string;
     imageUrl?: string | null;
     defaultUnit: string;
-    averageDuration: number; // expected days a single unit lasts a household of 1
+    averageDuration: number; // days one unit lasts for the current household
+    perPersonDailyRate?: number; // units/day for 1 person — enables math re-estimation without AI
     aiPredicted: boolean; // true once Gemini has set averageDuration/category (vs heuristic fallback)
     addedBy: 'barcode' | 'manual' | 'demo';
     source?: 'upcitemdb' | 'openfoodfacts' | 'cache' | 'manual' | 'demo' | null;
@@ -95,6 +96,7 @@ const ProductSchema = new Schema<IProduct>({
     imageUrl: { type: String, default: null },
     defaultUnit: { type: String, default: 'units' },
     averageDuration: { type: Number, default: 14 },
+    perPersonDailyRate: { type: Number },
     aiPredicted: { type: Boolean, default: false },
     addedBy: { type: String, enum: ['barcode', 'manual', 'demo'], default: 'barcode' },
     source: { type: String, default: null },
