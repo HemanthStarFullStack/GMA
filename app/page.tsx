@@ -53,8 +53,8 @@ export default async function HomePage() {
     ];
 
     return (
-        <div className="min-h-screen">
-            <header className="container mx-auto px-5 py-6 flex items-center justify-between">
+        <div className="h-screen flex flex-col overflow-hidden">
+            <header className="container mx-auto px-5 py-4 flex items-center justify-between shrink-0">
                 <div className="flex items-baseline gap-2">
                     <span className="font-display text-2xl font-semibold text-ink tracking-tight">GMA</span>
                     <span className="hidden sm:inline text-xs text-ink-faint">· grocery management</span>
@@ -66,28 +66,28 @@ export default async function HomePage() {
                 )}
             </header>
 
-            <main className="container mx-auto px-5">
-                <section className="pt-10 pb-14 grid lg:grid-cols-12 gap-10 items-center">
+            <main className="flex-1 container mx-auto px-5 flex flex-col justify-between py-4 overflow-hidden">
+                <section className="grid lg:grid-cols-12 gap-6 items-center flex-1">
                     <div className="lg:col-span-7 rise">
-                        <p className="kicker mb-4">Know your kitchen</p>
-                        <h1 className="font-display text-ink text-5xl sm:text-6xl lg:text-7xl font-semibold leading-[0.98]">
+                        <p className="kicker mb-2">Know your kitchen</p>
+                        <h1 className="font-display text-ink text-4xl sm:text-5xl lg:text-6xl font-semibold leading-[0.98]">
                             Restock <span className="italic text-primary">before</span> you run&nbsp;out.
                         </h1>
-                        <p className="mt-6 text-lg text-ink-soft max-w-xl">
+                        <p className="mt-4 text-base text-ink-soft max-w-xl">
                             Scan your groceries, track what's in the house, and let GMA learn your rhythm —
                             so you know what's running low before the shelf is empty.
                         </p>
 
-                        <div className="mt-8 flex flex-wrap items-center gap-3">
+                        <div className="mt-5 flex flex-wrap items-center gap-3">
                             <Link
                                 href={session ? "/scan" : "/login"}
-                                className="btn-primary px-6 py-3.5 inline-flex items-center gap-2 text-base shadow-lg"
+                                className="btn-primary px-5 py-3 inline-flex items-center gap-2 text-base shadow-lg"
                             >
                                 <Camera className="w-5 h-5" />
                                 {session ? "Scan a product" : "Get started"}
                                 <ArrowRight className="w-4 h-4" />
                             </Link>
-                            <Link href="/inventory" className="btn-ghost px-6 py-3.5 inline-flex items-center gap-2 text-base">
+                            <Link href="/inventory" className="btn-ghost px-5 py-3 inline-flex items-center gap-2 text-base">
                                 View inventory
                             </Link>
                         </div>
@@ -98,30 +98,26 @@ export default async function HomePage() {
                     </div>
                 </section>
 
-                <section className="pb-20">
-                    <div className="grid lg:grid-cols-12 gap-8 items-end">
-                        <div className="lg:col-span-12">
-                            <div className="grid grid-cols-2 gap-4">
-                                {tiles.map(({ href, label, note, Icon, tint }, i) => (
-                                    <Link
-                                        key={href}
-                                        href={href}
-                                        className="pantry-card p-6 group hover:-translate-y-0.5 transition-transform rise"
-                                        style={{ animationDelay: `${180 + i * 60}ms` }}
-                                    >
-                                        <Icon className={`w-8 h-8 ${tint}`} strokeWidth={1.6} />
-                                        <h3 className="font-display text-xl font-semibold text-ink mt-4">{label}</h3>
-                                        <p className="text-sm text-ink-soft">{note}</p>
-                                    </Link>
-                                ))}
-                            </div>
-                        </div>
+                <section className="pb-2">
+                    <div className="grid grid-cols-2 gap-3">
+                        {tiles.map(({ href, label, note, Icon, tint }, i) => (
+                            <Link
+                                key={href}
+                                href={href}
+                                className="pantry-card p-4 group hover:-translate-y-0.5 transition-transform rise"
+                                style={{ animationDelay: `${180 + i * 60}ms` }}
+                            >
+                                <Icon className={`w-6 h-6 ${tint}`} strokeWidth={1.6} />
+                                <h3 className="font-display text-lg font-semibold text-ink mt-2">{label}</h3>
+                                <p className="text-xs text-ink-soft">{note}</p>
+                            </Link>
+                        ))}
                     </div>
                 </section>
             </main>
 
-            <footer className="border-t border-line">
-                <div className="container mx-auto px-5 py-6 text-sm text-ink-faint flex items-center justify-center gap-2">
+            <footer className="border-t border-line shrink-0">
+                <div className="container mx-auto px-5 py-3 text-sm text-ink-faint flex items-center justify-center gap-2">
                     <span className="font-display italic">Scan · track · restock</span>
                 </div>
             </footer>

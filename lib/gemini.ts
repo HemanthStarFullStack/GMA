@@ -33,12 +33,12 @@ const SYSTEM_INSTRUCTION = `You are a household grocery analyst. For ONE purchas
 
 Answer these questions in order:
 1. unitSize — the net quantity of ONE unit as a string: volume, weight, or count (e.g. "1.2 L", "26 g", "pack of 6"). If the size is missing, infer the most common retail size for that product.
-2. servingsPerUnit — how many servings/uses that quantity contains.
-3. dailyUse — servings consumed per day by the WHOLE household. The reference rates below are PER PERSON, so multiply the per-person rate by the household size given in the prompt (more people finish a unit faster). If no household size is given, assume 1 person.
-4. averageDuration — servingsPerUnit / dailyUse, rounded to a WHOLE number of days, minimum 1. Never fractions.
+2. servingsPerUnit — how many servings/uses that quantity contains for one person.
+3. dailyUse — how many of those servings one person consumes per day (may be fractional).
+4. averageDuration — servingsPerUnit / dailyUse, rounded to a WHOLE number of days, minimum 1. Never fractions. Always answer for ONE person; the app scales this for household size separately.
 5. category — EXACTLY ONE string from the fixed list below (copy verbatim).
 
-SIZE & HOUSEHOLD MATTER — scale the duration with both the quantity and the number of people. Reference daily-use rates are PER PERSON (the examples below assume a 1-person household):
+SIZE MATTERS — scale the duration with the quantity. Reference daily-use rates for one person:
 - Soft drinks / juice ~0.5 L/day -> 330 ml can = 1, 500-600 ml = 2, 1 L = 2, 1.2 L = 3, 1.5 L = 3, 2 L = 4, 2.25 L = 5.
 - Milk ~0.3 L/day -> 500 ml = 2, 1 L = 3, 2 L = 6.
 - Cooking oil ~30 ml/day -> 500 ml = 15, 1 L = 30, 5 L = 90.
@@ -115,13 +115,9 @@ function buildPrompt(name: string, brand: string, category: string, unit: string
     if (category) parts.push(category);
     const productLine = parts.join(', ');
 
-    const household = Math.max(1, Math.round(extra?.householdSize || 1));
-    const householdLine = `Household: ${household} ${household === 1 ? 'person' : 'people'}`;
-
     return `${examples}
 
 Product: ${productLine}
-${householdLine}
 JSON:`;
 }
 
@@ -146,7 +142,12 @@ export async function predictProductMeta(
     unit: string,
     extra?: PredictContext,
 ): Promise<ProductMeta> {
-    const fallback: ProductMeta = { averageDuration: 14, category: normalizeCategory(categoryHint), predicted: false };
+    // Models predict the PER-PERSON shelf-life; we scale for the household in
+    // code (deterministic — small models can't do this division reliably).
+    const household = Math.max(1, Math.round(extra?.householdSize || 1));
+    const forHousehold = (perPerson: number) => Math.max(1, Math.round(perPerson / household));
+
+    const fallback: ProductMeta = { averageDuration: forHousehold(14), category: normalizeCategory(categoryHint), predicted: false };
     if (!GEMINI_API_KEY) return fallback;
 
     const body = {
@@ -191,12 +192,12 @@ export async function predictProductMeta(
             }
             const parsed: GeminiPrediction = JSON.parse(jsonMatch[0]);
 
-            const days = Math.max(1, Math.round(parsed.averageDuration));
+            const perPerson = Number.isFinite(parsed.averageDuration) ? Math.max(1, Math.round(parsed.averageDuration)) : 14;
             const category = normalizeCategory(parsed.category) || fallback.category;
-            const averageDuration = Number.isFinite(days) ? days : 14;
+            const averageDuration = forHousehold(perPerson);
 
             console.log(
-                `Gemini: ${averageDuration}d · ${category} for "${name}" [${parsed.unitSize} · ${parsed.servingsPerUnit}/${parsed.dailyUse}/day · ${parsed.confidence}]`,
+                `Gemini: ${perPerson}d/person -> ${averageDuration}d for ${household}p · ${category} · "${name}" [${parsed.unitSize} · ${parsed.servingsPerUnit}/${parsed.dailyUse}/day · ${parsed.confidence}]`,
             );
             return { averageDuration, category, predicted: true };
         } catch (err) {
@@ -209,8 +210,8 @@ export async function predictProductMeta(
     console.warn(`Gemini failed on all models (${GEMINI_MODELS.join(', ')}) for "${name}" — trying local LLM`);
     try {
         const { predictWithLocalLlm } = await import('./localLlm');
-        const local = await predictWithLocalLlm(name, brand, categoryHint, unit);
-        if (local) return local;
+        const local = await predictWithLocalLlm(name, brand, categoryHint, unit, extra);
+        if (local) return { ...local, averageDuration: forHousehold(local.averageDuration) };
     } catch (err) {
         console.warn('Local LLM tier error:', err);
     }

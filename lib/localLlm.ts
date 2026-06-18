@@ -1,4 +1,4 @@
-import { CATEGORIES, normalizeCategory, type ProductMeta } from './gemini';
+import { CATEGORIES, normalizeCategory, type ProductMeta, type PredictContext } from './gemini';
 
 /**
  * Tier-2 backup predictor: a local Ollama model with a web_search tool.
@@ -68,9 +68,10 @@ const TOOLS = [
     },
 ];
 
-const SYSTEM = `You estimate household grocery consumption. For ONE unit of a product output STRICT JSON:
-{"averageDuration": <whole number of days one person takes to finish one unit, min 1>, "category": <one of the list>, "unitSize": "<net size>"}
-Scale duration by pack size: soft drink ~0.5 L/day (330ml=1, 1L=2, 1.2L=3, 2L=4); milk ~0.3 L/day (1L=3); rice/flour ~0.15 kg/day (5kg=34); oil 1L=30; single snack packet=1; toothpaste 200g=60.
+const SYSTEM = `You estimate grocery consumption FOR ONE PERSON. For ONE unit of a product output STRICT JSON:
+{"averageDuration": <whole number of days ONE person takes to finish one unit, min 1>, "category": <one of the list>, "unitSize": "<net size>"}
+Scale duration by pack size (per-person rates): soft drink ~0.5 L/day (330ml=1, 1L=2, 1.2L=3, 2L=4); milk ~0.3 L/day (1L=3); rice/flour ~0.15 kg/day (5kg=34); oil 1L=30; deodorant/body spray 150ml=45; perfume 100ml=120; single snack packet=1; toothpaste 200g=60.
+Personal-care durables (sprays, perfumes, lotions) last weeks/months, never 1 day. Answer for ONE person only — the app scales for household size separately.
 category MUST be exactly one of: ${CATEGORIES.join(', ')}.
 If you do not recognise the product, call web_search first, then answer. Output ONLY the JSON object, nothing else.`;
 
@@ -115,13 +116,21 @@ export async function predictWithLocalLlm(
     brand: string,
     categoryHint: string,
     unit: string,
+    extra?: PredictContext,
 ): Promise<ProductMeta | null> {
     if (!(await ollamaReachable())) return null;
 
-    const productLine = [name, brand, categoryHint, unit].filter(Boolean).join(', ');
+    const parts: string[] = [name, brand].filter(Boolean);
+    const size = (extra?.size || unit || '').trim();
+    if (size && size.toLowerCase() !== 'units') parts.push(size);
+    if (extra?.flavor) parts.push(`${extra.flavor} variant`);
+    if (extra?.price !== undefined && extra?.price !== '' && extra?.price !== null) parts.push(`approx price ${extra.price}`);
+    if (categoryHint) parts.push(categoryHint);
+    const productLine = parts.join(', ');
+
     const messages: ChatMessage[] = [
         { role: 'system', content: SYSTEM },
-        { role: 'user', content: `Product: ${productLine}\nReturn the JSON.` },
+        { role: 'user', content: `Product: ${productLine}\nReturn the JSON (for one person).` },
     ];
 
     // Up to 2 tool rounds, then a forced JSON finalisation.
