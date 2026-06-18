@@ -98,6 +98,8 @@ export type PredictContext = {
     price?: string | number;
     size?: string; // explicit net size/weight if the caller has a cleaner value than `unit`
     householdSize?: number; // people in the household — scales how fast a unit is used up
+    prevHouseholdSize?: number; // previous household size (re-estimation only)
+    daysAtPreviousSize?: number; // days the household was at prevHouseholdSize before this change
 };
 
 function buildPrompt(name: string, brand: string, category: string, unit: string, extra?: PredictContext): string {
@@ -105,8 +107,6 @@ function buildPrompt(name: string, brand: string, category: string, unit: string
         (e) => `Product: ${e.product}\nJSON: ${JSON.stringify(e.response)}`,
     ).join('\n\n');
 
-    // Pack every signal we have into the product line — more context = a sharper
-    // first prediction. Size/weight and price especially anchor the duration.
     const parts: string[] = [name, brand].filter(Boolean);
     const size = (extra?.size || unit || '').trim();
     if (size && size.toLowerCase() !== 'units') parts.push(size);
@@ -115,9 +115,16 @@ function buildPrompt(name: string, brand: string, category: string, unit: string
     if (category) parts.push(category);
     const productLine = parts.join(', ');
 
+    // When re-estimating after a household size change, append context so the
+    // model can factor in real usage history if the per-person rate seemed off.
+    const reestimateNote =
+        extra?.prevHouseholdSize && extra.prevHouseholdSize !== (extra.householdSize ?? 1)
+            ? `\nContext: household changing from ${extra.prevHouseholdSize} → ${extra.householdSize ?? 1} people; product in active use for ~${extra.daysAtPreviousSize ?? 0} days. Confirm or correct the per-person daily rate based on this usage period.`
+            : '';
+
     return `${examples}
 
-Product: ${productLine}
+Product: ${productLine}${reestimateNote}
 JSON:`;
 }
 
@@ -144,10 +151,17 @@ export async function predictProductMeta(
 ): Promise<ProductMeta> {
     // Models predict the PER-PERSON shelf-life; we scale for the household in
     // code (deterministic — small models can't do this division reliably).
+    // Personal Care items are individual (each person uses their own product)
+    // and must NOT be divided by household size.
     const household = Math.max(1, Math.round(extra?.householdSize || 1));
-    const forHousehold = (perPerson: number) => Math.max(1, Math.round(perPerson / household));
+    const forHousehold = (perPerson: number, cat: string) => {
+        // ponytail: personal care = individual use, not shared → no household scaling
+        const shared = cat !== 'Personal Care';
+        return Math.max(1, Math.round(perPerson / (shared ? household : 1)));
+    };
 
-    const fallback: ProductMeta = { averageDuration: forHousehold(14), category: normalizeCategory(categoryHint), predicted: false };
+    const fallbackCategory = normalizeCategory(categoryHint);
+    const fallback: ProductMeta = { averageDuration: forHousehold(14, fallbackCategory), category: fallbackCategory, predicted: false };
     if (!GEMINI_API_KEY) return fallback;
 
     const body = {
@@ -194,10 +208,10 @@ export async function predictProductMeta(
 
             const perPerson = Number.isFinite(parsed.averageDuration) ? Math.max(1, Math.round(parsed.averageDuration)) : 14;
             const category = normalizeCategory(parsed.category) || fallback.category;
-            const averageDuration = forHousehold(perPerson);
+            const averageDuration = forHousehold(perPerson, category);
 
             console.log(
-                `Gemini: ${perPerson}d/person -> ${averageDuration}d for ${household}p · ${category} · "${name}" [${parsed.unitSize} · ${parsed.servingsPerUnit}/${parsed.dailyUse}/day · ${parsed.confidence}]`,
+                `Gemini: ${perPerson}d/person -> ${averageDuration}d for ${household}p (${category === 'Personal Care' ? 'personal, no scaling' : `÷${household}`}) · ${category} · "${name}" [${parsed.unitSize} · ${parsed.servingsPerUnit}/${parsed.dailyUse}/day · ${parsed.confidence}]`,
             );
             return { averageDuration, category, predicted: true };
         } catch (err) {
@@ -211,7 +225,7 @@ export async function predictProductMeta(
     try {
         const { predictWithLocalLlm } = await import('./localLlm');
         const local = await predictWithLocalLlm(name, brand, categoryHint, unit, extra);
-        if (local) return { ...local, averageDuration: forHousehold(local.averageDuration) };
+        if (local) return { ...local, averageDuration: forHousehold(local.averageDuration, local.category) };
     } catch (err) {
         console.warn('Local LLM tier error:', err);
     }

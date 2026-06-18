@@ -11,18 +11,30 @@ import { auth } from '@/auth';
  * only refresh the products this user actually has in stock. Runs in the
  * background (fire-and-forget) so the settings save returns instantly.
  */
-async function reestimateForHousehold(userId: string, householdSize: number) {
+async function reestimateForHousehold(
+    userId: string,
+    householdSize: number,
+    prevHouseholdSize: number,
+    daysAtPreviousSize: number,
+) {
     const inv = await Inventory.find({ userId, status: 'active', isDemo: { $ne: true } }).select('productId').lean();
     const barcodes = [...new Set(inv.map((i) => i.productId))];
-    const products = await Product.find({ barcode: { $in: barcodes }, isDemo: { $ne: true } }).lean();
+    // Personal Care items are individually used (each person has their own deodorant /
+    // toothpaste / shampoo). Their shelf-life doesn't change with household size.
+    const products = await Product.find({
+        barcode: { $in: barcodes },
+        isDemo: { $ne: true },
+        category: { $ne: 'Personal Care' },
+    }).lean();
     for (const p of products) {
         try {
             const meta = await predictProductMeta(p.name, p.brand || '', p.category, p.defaultUnit || 'units', {
                 flavor: p.flavor || undefined,
                 price: p.price || undefined,
                 householdSize,
+                prevHouseholdSize,
+                daysAtPreviousSize,
             });
-            // Only overwrite when the AI actually answered — never clobber with a heuristic.
             if (meta.predicted) {
                 await Product.updateOne(
                     { barcode: p.barcode },
@@ -111,15 +123,31 @@ export async function PUT(request: Request) {
         const newFamily = typeof update.familySize === 'number' ? update.familySize : oldFamily;
         const newSurvey = update['preferences.surveyFrequency'] ?? prev?.preferences?.surveyFrequency ?? 'occasional';
 
-        // Family size changed → re-estimate this user's active products for the
-        // new household, in the background so the save returns immediately.
         let reestimating = 0;
         if (newFamily !== oldFamily) {
+            // How long did the household sit at the old size? Used to give the AI
+            // usage-history context so it can confirm or correct its per-person rate.
+            const changedAt = prev?.familySizeChangedAt ? new Date(prev.familySizeChangedAt) : null;
+            const daysAtPreviousSize = changedAt
+                ? Math.floor((Date.now() - changedAt.getTime()) / 86_400_000)
+                : 0;
+
+            // Record the transition so the next change has history to draw on.
+            await User.updateOne(
+                { _id: session.user.id },
+                { $set: { prevFamilySize: oldFamily, familySizeChangedAt: new Date() } },
+            );
+
             const inv = await Inventory.find({ userId: session.user.id, status: 'active', isDemo: { $ne: true } }).select('productId').lean();
             const barcodes = [...new Set(inv.map((i) => i.productId))];
-            const count = await Product.countDocuments({ barcode: { $in: barcodes }, isDemo: { $ne: true } });
+            // Count excludes Personal Care (not re-estimated — shelf-life is per-person)
+            const count = await Product.countDocuments({
+                barcode: { $in: barcodes },
+                isDemo: { $ne: true },
+                category: { $ne: 'Personal Care' },
+            });
             reestimating = count;
-            void reestimateForHousehold(session.user.id, newFamily);
+            void reestimateForHousehold(session.user.id, newFamily, oldFamily, daysAtPreviousSize);
         }
 
         return NextResponse.json({

@@ -11,6 +11,8 @@ export interface IUser extends Document {
     createdAt: Date;
     demoSeeded: boolean; // whether the one-time demo onboarding data has been created
     tourCompleted: boolean; // whether the new-user guided tour has run
+    familySizeChangedAt?: Date; // when household size was last changed
+    prevFamilySize?: number;    // household size before the last change
     preferences: {
         surveyFrequency: 'always' | 'occasional';
     };
@@ -23,6 +25,8 @@ const UserSchema = new Schema<IUser>({
     emailVerified: { type: Date },
     displayName: { type: String, default: 'User' },
     familySize: { type: Number, default: 1 },
+    familySizeChangedAt: { type: Date },
+    prevFamilySize: { type: Number },
     createdAt: { type: Date, default: Date.now },
     demoSeeded: { type: Boolean, default: false },
     tourCompleted: { type: Boolean, default: false },
