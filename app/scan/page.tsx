@@ -78,19 +78,18 @@ export default function ScanPage() {
             const imageUrl = await uploadPromise;
             const d = vis.data || {};
 
-            // Back/nutrition panel: name & brand aren't here — guide to the
-            // front, but keep the net quantity if we got it.
+            // Back/nutrition panel: name & brand aren't here, but quantity and
+            // price often are — fill what we can, guide user to add the name.
             if (d.backPanel) {
-                setToast(
-                    `Looks like the back of the pack — snap the front for the name & brand.${d.quantity ? ` Size ${d.quantity} filled in.` : ""}`,
-                );
-                setForm({ ...emptyForm(), unit: d.quantity || "units", source: "ocr", imageUrl });
+                const filled = [d.quantity && `size ${d.quantity}`, d.price && `price ${d.price}`].filter(Boolean).join(", ");
+                setToast(`Back panel — ${filled ? `${filled} filled in.` : ""} Snap the front for name & brand.`);
+                setForm({ ...emptyForm(), unit: d.quantity || "units", price: d.price || "", source: "ocr", imageUrl });
                 setMode("manual");
                 return;
             }
             if (!vis.success || !d.name) {
                 setToast("Couldn't read the label — type the details and it'll be saved.");
-                setForm({ ...emptyForm(), unit: d.quantity || "units", source: "ocr", imageUrl });
+                setForm({ ...emptyForm(), unit: d.quantity || "units", price: d.price || "", source: "ocr", imageUrl });
                 setMode("manual");
                 return;
             }
@@ -116,6 +115,7 @@ export default function ScanPage() {
                 name: d.name,
                 brand: d.brand || "",
                 unit: d.quantity || "units",
+                price: d.price || "",
                 averageDuration,
                 category,
                 source: "ocr",
@@ -188,9 +188,8 @@ export default function ScanPage() {
         }
     };
 
-    // Optional second shot: the back/nutrition panel declares the net quantity
-    // more reliably than the front. We only pull the quantity from it (brand &
-    // name live on the front) and drop it into the Size field. Best-effort.
+    // Optional second shot: back panel has net quantity + MRP even when the
+    // front doesn't. Pull both and merge into the form.
     const handleBackPhoto = async (file?: File) => {
         if (!file) return;
         setReadingBack(true);
@@ -199,11 +198,13 @@ export default function ScanPage() {
             const visRes = await fetch("/api/product-vision", { method: "POST", body: image });
             const vis = await visRes.json();
             const q = vis.data?.quantity;
-            if (q) {
-                setForm((f) => ({ ...f, unit: q }));
-                setToast(`Back read — size set to ${q}.`);
+            const p = vis.data?.price;
+            if (q || p) {
+                setForm((f) => ({ ...f, ...(q ? { unit: q } : {}), ...(p ? { price: p } : {}) }));
+                const parts = [q && `size ${q}`, p && `price ${p}`].filter(Boolean).join(", ");
+                setToast(`Back read — ${parts} filled in.`);
             } else {
-                setToast("Couldn't find the net quantity on the back — set the size manually.");
+                setToast("Couldn't find details on the back — set them manually.");
             }
         } catch {
             setToast("Couldn't read the back photo.");

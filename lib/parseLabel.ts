@@ -6,7 +6,7 @@
 import { findProductTerm } from "./groceryPool";
 
 export type OcrItem = { text: string; h: number; y: number; x: number; conf: number };
-export type ParsedLabel = { name: string; brand: string; quantity: string; rawText: string; backPanel: boolean };
+export type ParsedLabel = { name: string; brand: string; quantity: string; price: string; rawText: string; backPanel: boolean };
 
 // Map every unit spelling OCR might emit onto a canonical form.
 const UNIT_CANON: Record<string, string> = {
@@ -65,6 +65,21 @@ function extractQuantity(items: OcrItem[], rawText: string): string {
     return "";
 }
 
+// Extract MRP/price from raw text. Tries MRP+currency first (most specific),
+// then standalone ₹/Rs markers. Returns "₹X" or "" if not found.
+const PRICE_RE = [
+    /MRP\.?\s*(?:Rs\.?|₹)\s*(\d+(?:[.,]\d{1,2})?)/i,   // MRP Rs. 25  /  MRP ₹25
+    /(?:Rs\.?|₹)\s*(\d+(?:[.,]\d{1,2})?)(?:\s*\/-?)?/i, // Rs. 50/-  /  ₹199
+    /MRP\.?\s*:?\s*(\d+(?:[.,]\d{1,2})?)/i,              // MRP: 25  /  MRP 25.00
+];
+function extractPrice(rawText: string): string {
+    for (const re of PRICE_RE) {
+        const m = rawText.match(re);
+        if (m) return `₹${m[1].replace(",", ".")}`;
+    }
+    return "";
+}
+
 // Strip OCR noise punctuation, collapse whitespace.
 function clean(s: string): string {
     return s.replace(/[^\p{L}\p{N}&.\-'\s]/gu, " ").replace(/\s+/g, " ").trim();
@@ -88,6 +103,7 @@ function looksLikeBackPanel(rawText: string): boolean {
 export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
     const rawText = (fullText || items.map((i) => i.text).join(" ")).trim();
     const quantity = extractQuantity(items, rawText);
+    const price = extractPrice(rawText);
     const backPanel = looksLikeBackPanel(rawText);
 
     const cand = items
@@ -118,5 +134,5 @@ export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
             "";
     }
 
-    return { name: titleCase(name), brand: titleCase(brand), quantity, rawText, backPanel };
+    return { name: titleCase(name), brand: titleCase(brand), quantity, price, rawText, backPanel };
 }

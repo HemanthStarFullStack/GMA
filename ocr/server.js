@@ -31,7 +31,8 @@ async function preprocess(buf) {
             const s = 900 / maxEdge;
             pipeline = pipeline.resize(Math.round((meta.width || 900) * s), Math.round((meta.height || 900) * s));
         }
-        return await pipeline.normalize().sharpen({ sigma: 1.2 }).jpeg({ quality: 93 }).toBuffer();
+        return await pipeline.rotate() // auto-apply EXIF orientation before any other transform
+            .normalize().sharpen({ sigma: 1.2 }).jpeg({ quality: 93 }).toBuffer();
     } catch (e) {
         console.warn("[ocr] preprocess failed, using original:", e?.message);
         return buf;

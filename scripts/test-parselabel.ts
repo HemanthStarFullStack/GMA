@@ -56,5 +56,11 @@ check("net qty beats 'per 100 g'", b.quantity, "39 g");
 check("cooking 'per/water ml' not picked", b.quantity !== "240 ml", true);
 check("back panel detected", b.backPanel, true);
 
+// price extraction
+check("MRP Rs price", parseLabel([], "MRP Rs. 25 Net Qty 39 g").price, "₹25");
+check("rupee symbol price", parseLabel([], "₹ 199 Saffola Masala Oats").price, "₹199");
+check("bare MRP price", parseLabel([], "MRP: 45.00").price, "₹45.00");
+check("no false price", parseLabel([], "Energy 411 kJ per 100 g").price, "");
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? ` — ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);
