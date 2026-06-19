@@ -57,12 +57,26 @@ export default function ScanPage() {
 
     const handlePhoto = async (image: Blob) => {
         setLookingUp(true);
+        // The shot doubles as the product photo — upload it alongside OCR so it
+        // costs no extra wait. Best-effort: a failed upload just leaves no image.
+        const uploadPromise = (async () => {
+            try {
+                const fd = new FormData();
+                fd.append("file", image, "label.jpg");
+                const r = await fetch("/api/upload", { method: "POST", body: fd });
+                const j = await r.json();
+                return j.success ? (j.url as string) : null;
+            } catch {
+                return null;
+            }
+        })();
         try {
             const visRes = await fetch("/api/product-vision", { method: "POST", body: image });
             const vis = await visRes.json();
+            const imageUrl = await uploadPromise;
             if (!vis.success || !vis.data?.name) {
                 setToast("Couldn't read the label — type the details and it'll be saved.");
-                setForm({ ...emptyForm(), source: "ocr" });
+                setForm({ ...emptyForm(), source: "ocr", imageUrl });
                 setMode("manual");
                 return;
             }
@@ -92,11 +106,12 @@ export default function ScanPage() {
                 averageDuration,
                 category,
                 source: "ocr",
+                imageUrl,
             });
             setMode("confirm");
         } catch {
             setToast("OCR unavailable — add the product manually.");
-            setForm({ ...emptyForm(), source: "ocr" });
+            setForm({ ...emptyForm(), source: "ocr", imageUrl: await uploadPromise });
             setMode("manual");
         } finally {
             setLookingUp(false);
