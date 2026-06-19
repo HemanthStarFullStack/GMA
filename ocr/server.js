@@ -5,6 +5,7 @@
 // Not exposed publicly — only the app reaches it over the Docker network.
 import { createServer } from "node:http";
 import { PaddleOcrService } from "ppu-paddle-ocr";
+import sharp from "sharp";
 
 const PORT = 4000;
 const MAX_BYTES = 12 * 1024 * 1024; // reject oversized uploads at the boundary
@@ -15,6 +16,27 @@ const MAX_BYTES = 12 * 1024 * 1024; // reject oversized uploads at the boundary
 const ocr = new PaddleOcrService({ recognition: { strategy: "per-box" } });
 await ocr.initialize(); // loads the model into memory once at boot
 console.log(`[ocr] model ready, listening on :${PORT}`);
+
+// Preprocess the raw image buffer before OCR:
+//   normalize  — auto-levels: corrects washed-out / underexposed shots
+//   sharpen    — unsharp mask: crisps character edges for better detection
+//   upscale    — if longest edge < 900 px, PP-OCR misses small text regions
+// Falls back to the original buffer on any error (unsupported format, corrupt).
+async function preprocess(buf) {
+    try {
+        const meta = await sharp(buf).metadata();
+        const maxEdge = Math.max(meta.width || 0, meta.height || 0);
+        let pipeline = sharp(buf);
+        if (maxEdge > 0 && maxEdge < 900) {
+            const s = 900 / maxEdge;
+            pipeline = pipeline.resize(Math.round((meta.width || 900) * s), Math.round((meta.height || 900) * s));
+        }
+        return await pipeline.normalize().sharpen({ sigma: 1.2 }).jpeg({ quality: 93 }).toBuffer();
+    } catch (e) {
+        console.warn("[ocr] preprocess failed, using original:", e?.message);
+        return buf;
+    }
+}
 
 // ponytail: serial lock — one recognition at a time. A shared OCR session
 // isn't safe to call concurrently. Add a worker pool only if throughput needs it.
@@ -51,7 +73,8 @@ const server = createServer(async (req, res) => {
         const buf = Buffer.concat(chunks);
         if (buf.byteLength < 100) return json(400, { error: "empty image" });
 
-        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+        const enhanced = await preprocess(buf);
+        const ab = enhanced.buffer.slice(enhanced.byteOffset, enhanced.byteOffset + enhanced.byteLength);
         const r = await recognizeSerial(ab);
         const items = r.results.map((it) => ({
             text: it.text,
