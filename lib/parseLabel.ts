@@ -3,6 +3,8 @@
 // net quantity), name/brand by font size. Always imperfect; the scan form stays
 // editable so the user corrects whatever's wrong.
 
+import { findProductTerm } from "./groceryPool";
+
 export type OcrItem = { text: string; h: number; y: number; x: number; conf: number };
 export type ParsedLabel = { name: string; brand: string; quantity: string; rawText: string; backPanel: boolean };
 
@@ -95,16 +97,26 @@ export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
         .filter((i) => !/^\d+(?:[.,]\d+)?\s*\p{L}{0,4}$/u.test(i.text)) // drop bare quantities
         .sort((a, b) => b.h - a.h);
 
-    // Biggest text = product name (most common front-pack layout). Brand = next
-    // biggest on a different visual line. On a back panel this is unreliable;
-    // the UI nudges toward a front shot instead.
-    const name = cand[0]?.text ?? "";
-    const nameY = cand[0]?.y ?? 0;
-    const nameH = cand[0]?.h ?? 0;
-    const brand =
-        cand.slice(1).find((c) => Math.abs(c.y - nameY) > nameH * 0.5)?.text ??
-        cand[1]?.text ??
-        "";
+    // Identify the product by matching the grocery pool — font size is unreliable
+    // (the brand logo is often the biggest text). The prominent line that's a
+    // known grocery term is the product; the biggest leftover is the brand.
+    let name = "";
+    let brand = "";
+    const productIdx = cand.findIndex((c) => findProductTerm(c.text));
+    if (productIdx >= 0) {
+        name = cand[productIdx].text;
+        brand = cand.find((c, i) => i !== productIdx && !findProductTerm(c.text))?.text ?? "";
+    } else {
+        // No known product noun (e.g. a sub-brand like "Dark Fantasy") — fall
+        // back to font size: biggest = name, next on a different line = brand.
+        name = cand[0]?.text ?? "";
+        const nameY = cand[0]?.y ?? 0;
+        const nameH = cand[0]?.h ?? 0;
+        brand =
+            cand.slice(1).find((c) => Math.abs(c.y - nameY) > nameH * 0.5)?.text ??
+            cand[1]?.text ??
+            "";
+    }
 
     return { name: titleCase(name), brand: titleCase(brand), quantity, rawText, backPanel };
 }

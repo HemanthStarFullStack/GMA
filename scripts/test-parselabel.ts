@@ -1,5 +1,6 @@
 // Self-check for the OCR label parser. Run: node scripts/test-parselabel.ts
 import { parseLabel, type OcrItem } from "../lib/parseLabel.ts";
+import { findProductTerm } from "../lib/groceryPool.ts";
 
 let pass = 0,
     fail = 0;
@@ -19,20 +20,25 @@ check("qty decimal", qty("Sprite 1.25 ltr"), "1.25 L");
 check("qty pcs", qty("Eggs pack of 6 pcs"), "6 pcs");
 check("qty none", qty("Just a brand name"), "");
 
-// font-size ranking: biggest box = name; quantity excluded from name/brand
-const items: OcrItem[] = [
-    { text: "TAAZA", h: 70, y: 200, x: 10, conf: 0.95 },
-    { text: "Amul", h: 40, y: 80, x: 10, conf: 0.93 },
-    { text: "Toned Milk", h: 30, y: 300, x: 10, conf: 0.9 },
-    { text: "1 L", h: 25, y: 400, x: 10, conf: 0.96 },
-    { text: "x!?", h: 60, y: 500, x: 10, conf: 0.2 }, // low conf noise, dropped
+// grocery pool: brands rejected, products matched (powers the product/brand split)
+check("pool rejects brand", findProductTerm("Saffola"), null);
+check("pool matches product", !!findProductTerm("Masala Oats"), true);
+
+// Front pack, brand logo BIGGER than the product name. The pool must still pick
+// the product as name and the brand as brand — no font-size swap.
+const front: OcrItem[] = [
+    { text: "Saffola", h: 80, y: 60, x: 20, conf: 0.96 },      // brand logo — biggest
+    { text: "Masala Oats", h: 50, y: 180, x: 20, conf: 0.95 }, // product — smaller
+    { text: "Classic", h: 30, y: 260, x: 20, conf: 0.9 },
+    { text: "Net Qty 39 g", h: 24, y: 600, x: 20, conf: 0.95 },
+    { text: "x!?", h: 90, y: 500, x: 10, conf: 0.2 },          // low-conf noise, dropped
 ];
-const p = parseLabel(items, "Amul TAAZA Toned Milk 1 L");
-check("name = biggest confident text", p.name, "Taaza");
-check("brand = next on different line", p.brand, "Amul");
-check("quantity parsed", p.quantity, "1 L");
-check("low-conf noise dropped from name/brand", [p.name, p.brand].includes("X!?"), false);
-check("quantity not in name/brand", [p.name, p.brand].some((s) => s.includes("1 L")), false);
+const f = parseLabel(front, "Saffola Masala Oats Classic Net Qty 39 g");
+check("product becomes name (not the bigger brand)", f.name, "Masala Oats");
+check("brand from leftover prominent text", f.brand, "Saffola");
+check("quantity from net qty", f.quantity, "39 g");
+check("front not flagged as back", f.backPanel, false);
+check("low-conf noise dropped", [f.name, f.brand].includes("X!?"), false);
 
 // nutrition panel: prefer "Net Qty 39 g" over "Per 100 g"
 const back: OcrItem[] = [
@@ -49,7 +55,6 @@ const b = parseLabel(back);
 check("net qty beats 'per 100 g'", b.quantity, "39 g");
 check("cooking 'per/water ml' not picked", b.quantity !== "240 ml", true);
 check("back panel detected", b.backPanel, true);
-check("front milk not flagged as back", p.backPanel, false);
 
 console.log(`\n${pass}/${pass + fail} passed${fail ? ` — ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);
