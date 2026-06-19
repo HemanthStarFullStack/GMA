@@ -2,6 +2,7 @@
 
 import { Package, Calendar, Trash2, CheckCircle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useState } from "react";
 
 interface ProductCardProps {
     item: any;
@@ -11,15 +12,16 @@ interface ProductCardProps {
 
 export default function ProductCard({ item, onConsume, onDelete }: ProductCardProps) {
     const { product, quantity, unit, purchaseDate, _id } = item;
+    const [imgBroken, setImgBroken] = useState(false);
 
     return (
         <div className="pantry-card overflow-hidden group">
             <div className="flex p-4 gap-4">
                 {/* Product image */}
                 <div className="w-20 h-20 rounded-xl bg-paper-2 flex-shrink-0 overflow-hidden flex items-center justify-center border border-line">
-                    {product.imageUrl ? (
+                    {product.imageUrl && !imgBroken ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" onError={() => setImgBroken(true)} />
                     ) : (
                         <Package className="w-8 h-8 text-ink-faint" strokeWidth={1.6} />
                     )}
