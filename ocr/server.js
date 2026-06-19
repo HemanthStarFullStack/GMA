@@ -9,7 +9,10 @@ import { PaddleOcrService } from "ppu-paddle-ocr";
 const PORT = 4000;
 const MAX_BYTES = 12 * 1024 * 1024; // reject oversized uploads at the boundary
 
-const ocr = new PaddleOcrService();
+// per-box strategy: recognize each detected region on its own. On dense,
+// multi-column packs (nutrition/back panels) the default per-line merges across
+// columns and garbles text; per-box keeps each line clean.
+const ocr = new PaddleOcrService({ recognition: { strategy: "per-box" } });
 await ocr.initialize(); // loads the model into memory once at boot
 console.log(`[ocr] model ready, listening on :${PORT}`);
 

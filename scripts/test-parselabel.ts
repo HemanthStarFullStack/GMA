@@ -34,5 +34,22 @@ check("quantity parsed", p.quantity, "1 L");
 check("low-conf noise dropped from name/brand", [p.name, p.brand].includes("X!?"), false);
 check("quantity not in name/brand", [p.name, p.brand].some((s) => s.includes("1 L")), false);
 
+// nutrition panel: prefer "Net Qty 39 g" over "Per 100 g"
+const back: OcrItem[] = [
+    { text: "Per 100 g", h: 30, y: 100, x: 400, conf: 0.95 },
+    { text: "411", h: 28, y: 140, x: 400, conf: 0.95 },
+    { text: "Net Qty.:", h: 32, y: 900, x: 20, conf: 0.93 },
+    { text: "39 g", h: 34, y: 900, x: 160, conf: 0.99 },
+    { text: "Pour 240 ml water into the pan", h: 24, y: 60, x: 400, conf: 0.9 },
+    { text: "NUTRITIONAL INFORMATION", h: 30, y: 80, x: 400, conf: 0.95 },
+    { text: "INGREDIENTS", h: 30, y: 700, x: 20, conf: 0.95 },
+    { text: "BEST BEFORE 9 MONTHS", h: 26, y: 950, x: 20, conf: 0.9 },
+];
+const b = parseLabel(back);
+check("net qty beats 'per 100 g'", b.quantity, "39 g");
+check("cooking 'per/water ml' not picked", b.quantity !== "240 ml", true);
+check("back panel detected", b.backPanel, true);
+check("front milk not flagged as back", p.backPanel, false);
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? ` — ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);

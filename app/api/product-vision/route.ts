@@ -38,13 +38,17 @@ export async function POST(request: Request) {
         const ocr: { text?: string; items?: OcrItem[] } = await res.json();
         const parsed = parseLabel(ocr.items ?? [], ocr.text ?? '');
 
-        if (!parsed.name) {
-            return NextResponse.json(
-                { success: false, message: 'Could not read the label', data: { rawText: parsed.rawText } },
-                { status: 200 },
-            );
+        // On a back/nutrition panel the brand and product name aren't present
+        // (they live on the front) — the "name" we'd pick is admin/nutrition
+        // junk. Drop it and let the client nudge the user to shoot the front.
+        // The net quantity, if found, is still useful.
+        if (parsed.backPanel) {
+            parsed.name = '';
+            parsed.brand = '';
         }
-        return NextResponse.json({ success: true, data: parsed });
+
+        const useful = parsed.backPanel ? !!parsed.quantity : !!parsed.name;
+        return NextResponse.json({ success: useful, data: parsed });
     } catch (err: any) {
         console.warn('product-vision error:', err?.message || err);
         return NextResponse.json({ success: false, message: 'OCR service unavailable' }, { status: 503 });

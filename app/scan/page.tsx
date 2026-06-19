@@ -74,13 +74,24 @@ export default function ScanPage() {
             const visRes = await fetch("/api/product-vision", { method: "POST", body: image });
             const vis = await visRes.json();
             const imageUrl = await uploadPromise;
-            if (!vis.success || !vis.data?.name) {
-                setToast("Couldn't read the label — type the details and it'll be saved.");
-                setForm({ ...emptyForm(), source: "ocr", imageUrl });
+            const d = vis.data || {};
+
+            // Back/nutrition panel: name & brand aren't here — guide to the
+            // front, but keep the net quantity if we got it.
+            if (d.backPanel) {
+                setToast(
+                    `Looks like the back of the pack — snap the front for the name & brand.${d.quantity ? ` Size ${d.quantity} filled in.` : ""}`,
+                );
+                setForm({ ...emptyForm(), unit: d.quantity || "units", source: "ocr", imageUrl });
                 setMode("manual");
                 return;
             }
-            const d = vis.data;
+            if (!vis.success || !d.name) {
+                setToast("Couldn't read the label — type the details and it'll be saved.");
+                setForm({ ...emptyForm(), unit: d.quantity || "units", source: "ocr", imageUrl });
+                setMode("manual");
+                return;
+            }
             // One text-only estimate (cached server-side per product), so the
             // user lands on a populated form instead of the 14-day default.
             let averageDuration = 14;
