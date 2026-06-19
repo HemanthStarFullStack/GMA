@@ -21,8 +21,6 @@
     "@opeepsfun/open-peeps": "^1.0.6",
     "@rive-app/canvas-advanced-single": "^2.38.1",
     "@rive-app/react-canvas": "^4.29.1",
-    "@zxing/browser": "^0.1.5",
-    "@zxing/library": "^0.21.3",
     "date-fns": "^4.1.0",
     "driver.js": "^1.4.0",
     "framer-motion": "^12.23.25",

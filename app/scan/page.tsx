@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import BarcodeScanner from "@/components/BarcodeScanner";
+import PhotoCapture from "@/components/PhotoCapture";
 import { ArrowLeft, Package, CheckCircle2, Loader2, Minus, Plus, Sparkles, ImagePlus, X } from "lucide-react";
 import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
@@ -55,36 +55,48 @@ export default function ScanPage() {
     const [form, setForm] = useState<Form>(emptyForm());
     const fileRef = useRef<HTMLInputElement>(null);
 
-    const handleScan = async (barcode: string) => {
+    const handlePhoto = async (image: Blob) => {
         setLookingUp(true);
         try {
-            const res = await fetch(`/api/barcode?barcode=${encodeURIComponent(barcode)}`);
-            const data = await res.json();
-            if (data.success) {
-                const x = data.data;
-                setForm({
-                    barcode: x.barcode || barcode,
-                    name: x.name || "",
-                    brand: x.brand || "",
-                    flavor: x.flavor || "",
-                    price: x.price || "",
-                    category: x.category || "Other",
-                    unit: x.unit || "units",
-                    quantity: 1,
-                    averageDuration: x.averageDuration || 14,
-                    imageUrl: x.imageUrl || null,
-                    source: data.source || "barcode",
-                    addedBy: "barcode",
-                });
-                setMode("confirm");
-            } else {
-                setToast("Product not in our database yet — fill in the details and it'll be saved for next time.");
-                setForm(emptyForm(barcode));
+            const visRes = await fetch("/api/product-vision", { method: "POST", body: image });
+            const vis = await visRes.json();
+            if (!vis.success || !vis.data?.name) {
+                setToast("Couldn't read the label — type the details and it'll be saved.");
+                setForm({ ...emptyForm(), source: "ocr" });
                 setMode("manual");
+                return;
             }
+            const d = vis.data;
+            // One text-only estimate (cached server-side per product), so the
+            // user lands on a populated form instead of the 14-day default.
+            let averageDuration = 14;
+            let category = "Other";
+            try {
+                const pr = await fetch("/api/predict", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: d.name, brand: d.brand, unit: d.quantity, size: d.quantity, category: "Other" }),
+                });
+                const pj = await pr.json();
+                if (pj.success) {
+                    averageDuration = pj.data.averageDuration;
+                    category = pj.data.category || "Other";
+                }
+            } catch { /* keep defaults; user can Re-estimate */ }
+
+            setForm({
+                ...emptyForm(),
+                name: d.name,
+                brand: d.brand || "",
+                unit: d.quantity || "units",
+                averageDuration,
+                category,
+                source: "ocr",
+            });
+            setMode("confirm");
         } catch {
-            setForm(emptyForm(barcode));
-            setToast("Barcode lookup failed. Check your connection and add the product manually.");
+            setToast("OCR unavailable — add the product manually.");
+            setForm({ ...emptyForm(), source: "ocr" });
             setMode("manual");
         } finally {
             setLookingUp(false);
@@ -95,6 +107,11 @@ export default function ScanPage() {
         setForm(emptyForm(`MANUAL-${Date.now()}`));
         setMode("manual");
     };
+
+    // Deterministic id for products with no barcode, so re-adding the same
+    // item resolves to one shared catalogue entry instead of a duplicate.
+    const slugify = (s: string) =>
+        s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 
     // Re-run the AI estimate using everything the user has filled in / corrected.
     const reestimate = async () => {
@@ -148,14 +165,18 @@ export default function ScanPage() {
             setToast("Please enter a product name.");
             return;
         }
-        const returnMode: Mode = form.addedBy === "manual" ? "manual" : "confirm";
+        const returnMode: Mode = mode === "manual" ? "manual" : "confirm";
+        const productId =
+            form.source === "ocr"
+                ? `OCR-${slugify([form.brand, form.name, form.unit].filter(Boolean).join(" "))}`
+                : form.barcode || `MANUAL-${Date.now()}`;
         setMode("saving");
         try {
             const res = await fetch("/api/inventory", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    productId: form.barcode || `MANUAL-${Date.now()}`,
+                    productId,
                     quantity: form.quantity,
                     unit: form.unit || "units",
                     productDetails: {
@@ -205,13 +226,13 @@ export default function ScanPage() {
             <main className="container mx-auto px-5 py-8 max-w-xl">
                 {mode === "scan" && (
                     <div className="rise">
-                        <p className="kicker mb-3 text-center">Point · scan · confirm</p>
+                        <p className="kicker mb-3 text-center">Snap · confirm · add</p>
                         <div className="aspect-[3/4] sm:aspect-video w-full ring-1 ring-line rounded-2xl overflow-hidden shadow-xl relative">
-                            <BarcodeScanner onScan={handleScan} onManual={openManual} onError={(e) => setToast(e)} />
+                            <PhotoCapture onCapture={handlePhoto} onManual={openManual} onError={(e) => setToast(e)} />
                             {lookingUp && (
                                 <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center">
                                     <Loader2 className="w-10 h-10 animate-spin text-white" />
-                                    <p className="mt-3 text-white text-sm font-medium">Looking up barcode…</p>
+                                    <p className="mt-3 text-white text-sm font-medium">Reading label…</p>
                                 </div>
                             )}
                         </div>
@@ -227,7 +248,7 @@ export default function ScanPage() {
                             <p className="text-sm text-ink-soft mt-1">
                                 {isConfirm
                                     ? "Everything's editable — fix anything that's off, then add it."
-                                    : form.barcode.startsWith("MANUAL-")
+                                    : !form.barcode || form.barcode.startsWith("MANUAL-")
                                         ? "No barcode — just type the details."
                                         : <>Barcode <span className="font-mono text-ink">{form.barcode}</span> isn’t in any database yet.</>}
                             </p>

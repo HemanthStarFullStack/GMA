@@ -19,6 +19,8 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ADMIN_SECRET: ${ADMIN_SECRET:-}
+      # Internal OCR sidecar (label scanning) — reached over the compose network.
+      OCR_URL: ${OCR_URL:-http://ocr:4000}
       # Local-LLM fallback: by default use Ollama running on the host machine.
       # Set LOCAL_LLM_ENABLED=false to disable the tier entirely.
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
@@ -33,6 +35,20 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      # Only "started", not "healthy": if OCR is down, scanning degrades to
+      # manual entry rather than taking the whole app offline.
+      ocr:
+        condition: service_started
+
+  # Internal OCR sidecar — PP-OCRv5 (ONNX) for label scanning. CPU-only, free,
+  # no external API. Not published to the host; only the app reaches it.
+  ocr:
+    build: ./ocr
+    image: gma-ocr:latest
+    container_name: gma-ocr
+    restart: unless-stopped
+    expose:
+      - "4000"
 
   mongodb:
     image: mongo:7.0

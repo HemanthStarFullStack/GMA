@@ -1,0 +1,15 @@
+{
+  "name": "gma-ocr",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Internal OCR sidecar (PP-OCRv5 via ONNX) for GMA label scanning",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "onnxruntime-node": "^1.23.2",
+    "ppu-paddle-ocr": "^5.8.3"
+  }
+}
