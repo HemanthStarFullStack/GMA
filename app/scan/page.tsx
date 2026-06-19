@@ -78,9 +78,7 @@ export default function ScanPage() {
                 });
                 setMode("confirm");
             } else {
-                if (data.code === "RATE_LIMITED") {
-                    setToast("Daily lookup limit reached. The product may exist — fill it in manually.");
-                }
+                setToast("Product not in our database yet — fill in the details and it'll be saved for next time.");
                 setForm(emptyForm(barcode));
                 setMode("manual");
             }
