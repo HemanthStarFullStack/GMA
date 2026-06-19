@@ -9,8 +9,8 @@ import { predictProductMeta } from '@/lib/gemini';
  * Resolution order — the flow NEVER dead-ends:
  *   1. Local cache (Product collection) — instant, free, and self-learning.
  *      Any product ever added by any user resolves here on the next scan.
- *   2. UPCitemDB (trial) — broad US/international coverage.
- *   3. OpenFoodFacts — strong grocery/global coverage, returns images.
+ *   2. OpenFoodFacts — free, unlimited, strong grocery/global coverage, returns images.
+ *   3. Open Beauty Facts — same org/API, covers personal care / cosmetics.
  *   4. Nothing found -> 404 NOT_FOUND, and the client opens a manual-add form
  *      (which then writes to the cache so it resolves instantly next time).
  */
@@ -92,46 +92,42 @@ export async function GET(request: Request) {
 
         let productData: any = null;
         let source = 'none';
-        let upcRateLimited = false;
 
-        // 2. UPCitemDB
+        // 2. OpenFoodFacts — free, unlimited, strong grocery/global coverage
         try {
-            const upcRes = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`, {
-                headers: { 'User-Agent': 'SINTI-App/2.0' },
+            const offRes = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`, {
+                headers: { 'User-Agent': 'GMA-App/2.0 (portfolio project)' },
             });
-            if (upcRes.status === 429) {
-                upcRateLimited = true;
-                console.warn('UPCitemDB rate limit hit (trial ~100 req/day)');
-            } else if (upcRes.ok) {
-                const upcData = await upcRes.json();
-                if (upcData.items && upcData.items.length > 0) {
-                    const item = upcData.items[0];
+            if (offRes.ok) {
+                const offData = await offRes.json();
+                if (offData.status === 1 && offData.product) {
+                    const p = offData.product;
                     productData = {
-                        barcode: item.ean || item.upc || barcode,
-                        name: item.title || 'Unknown Product',
-                        brand: item.brand || '',
+                        barcode: p.code || barcode,
+                        name: p.product_name || p.product_name_en || 'Unknown Product',
+                        brand: (p.brands || '').split(',')[0].trim(),
                         flavor: '',
-                        category: normalizeCategory(item.category),
-                        imageUrl: item.images?.[0] || null,
-                        unit: 'units',
+                        category: normalizeCategory(p.categories?.split(',').pop()),
+                        imageUrl: p.image_front_url || p.image_url || null,
+                        unit: p.quantity || 'units',
                     };
-                    source = 'upcitemdb';
+                    source = 'openfoodfacts';
                 }
             }
         } catch (err) {
-            console.warn('UPCitemDB lookup failed:', err);
+            console.warn('OpenFoodFacts lookup failed:', err);
         }
 
-        // 3. OpenFoodFacts
+        // 3. Open Beauty Facts — same org, same API, covers personal care / cosmetics
         if (!productData) {
             try {
-                const offRes = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`, {
-                    headers: { 'User-Agent': 'SINTI-App/2.0 (portfolio project)' },
+                const obfRes = await fetch(`https://world.openbeautyfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`, {
+                    headers: { 'User-Agent': 'GMA-App/2.0 (portfolio project)' },
                 });
-                if (offRes.ok) {
-                    const offData = await offRes.json();
-                    if (offData.status === 1 && offData.product) {
-                        const p = offData.product;
+                if (obfRes.ok) {
+                    const obfData = await obfRes.json();
+                    if (obfData.status === 1 && obfData.product) {
+                        const p = obfData.product;
                         productData = {
                             barcode: p.code || barcode,
                             name: p.product_name || p.product_name_en || 'Unknown Product',
@@ -141,11 +137,11 @@ export async function GET(request: Request) {
                             imageUrl: p.image_front_url || p.image_url || null,
                             unit: p.quantity || 'units',
                         };
-                        source = 'openfoodfacts';
+                        source = 'openbeautyfacts';
                     }
                 }
             } catch (err) {
-                console.warn('OpenFoodFacts lookup failed:', err);
+                console.warn('OpenBeautyFacts lookup failed:', err);
             }
         }
 
@@ -196,7 +192,7 @@ export async function GET(request: Request) {
             {
                 success: false,
                 message: 'Product not found in any database',
-                code: upcRateLimited ? 'RATE_LIMITED' : 'NOT_FOUND',
+                code: 'NOT_FOUND',
                 barcode,
             },
             { status: 404 },
