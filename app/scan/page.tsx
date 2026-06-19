@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import PhotoCapture from "@/components/PhotoCapture";
-import { ArrowLeft, Package, CheckCircle2, Loader2, Minus, Plus, Sparkles, ImagePlus, X } from "lucide-react";
+import { ArrowLeft, Package, CheckCircle2, Loader2, Minus, Plus, Sparkles, ImagePlus, X, ScanLine } from "lucide-react";
 import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
 
@@ -52,8 +52,10 @@ export default function ScanPage() {
     const [lookingUp, setLookingUp] = useState(false);
     const [reestimating, setReestimating] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
+    const [readingBack, setReadingBack] = useState(false);
     const [form, setForm] = useState<Form>(emptyForm());
     const fileRef = useRef<HTMLInputElement>(null);
+    const backRef = useRef<HTMLInputElement>(null);
 
     const handlePhoto = async (image: Blob) => {
         setLookingUp(true);
@@ -183,6 +185,30 @@ export default function ScanPage() {
             setToast("Couldn't upload that image.");
         } finally {
             setUploadingImage(false);
+        }
+    };
+
+    // Optional second shot: the back/nutrition panel declares the net quantity
+    // more reliably than the front. We only pull the quantity from it (brand &
+    // name live on the front) and drop it into the Size field. Best-effort.
+    const handleBackPhoto = async (file?: File) => {
+        if (!file) return;
+        setReadingBack(true);
+        try {
+            const image = await downscale(file);
+            const visRes = await fetch("/api/product-vision", { method: "POST", body: image });
+            const vis = await visRes.json();
+            const q = vis.data?.quantity;
+            if (q) {
+                setForm((f) => ({ ...f, unit: q }));
+                setToast(`Back read — size set to ${q}.`);
+            } else {
+                setToast("Couldn't find the net quantity on the back — set the size manually.");
+            }
+        } catch {
+            setToast("Couldn't read the back photo.");
+        } finally {
+            setReadingBack(false);
         }
     };
 
@@ -327,6 +353,25 @@ export default function ScanPage() {
                             </div>
                         </div>
 
+                        {/* Optional back shot → auto-fills Size from the net qty. */}
+                        <button
+                            type="button"
+                            onClick={() => backRef.current?.click()}
+                            disabled={readingBack}
+                            className="btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm mb-4 disabled:opacity-50"
+                        >
+                            {readingBack ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanLine className="w-4 h-4" />}
+                            Scan the back for size
+                        </button>
+                        <input
+                            ref={backRef}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={(e) => handleBackPhoto(e.target.files?.[0])}
+                        />
+
                         <div className="space-y-3">
                             <Field label="Product name *">
                                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Toned Milk" className={inputCls} />
@@ -421,6 +466,18 @@ export default function ScanPage() {
             </main>
         </div>
     );
+}
+
+// Raw camera files can exceed the OCR 12MB cap; shrink to the same 1600px the
+// live capture uses before sending. (PhotoCapture downscales its own frames.)
+async function downscale(file: File, maxEdge = 1600): Promise<Blob> {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    c.getContext("2d")?.drawImage(bmp, 0, 0, c.width, c.height);
+    return new Promise<Blob>((res) => c.toBlob((b) => res(b ?? file), "image/jpeg", 0.85));
 }
 
 const inputCls = "w-full px-3 py-2 rounded-lg border border-line-strong bg-card focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none text-sm text-ink placeholder:text-ink-faint";
