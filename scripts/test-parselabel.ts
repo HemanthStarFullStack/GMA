@@ -56,6 +56,25 @@ check("net qty beats 'per 100 g'", b.quantity, "39 g");
 check("cooking 'per/water ml' not picked", b.quantity !== "240 ml", true);
 check("back panel detected", b.backPanel, true);
 
+// personal care: product type → brand=biggest, name=closest non-type, flavor=scent
+// mirrors actual PP-OCRv5 output from the Ponds DreamFlower scans
+const ponds: OcrItem[] = [
+    { text: "POND'S",       h: 70, y: 183, x: 60, conf: 0.98 },
+    { text: "DREAMFLOWER",  h: 27, y: 287, x: 50, conf: 1 },
+    { text: "lacum powder", h: 49, y: 748, x: 60, conf: 0.92 }, // OCR misread of "talcum powder"
+    { text: "fragrant",     h: 38, y: 734, x: 60, conf: 0.99 },
+    { text: "PINK LILY",    h: 31, y: 797, x: 60, conf: 0.99 },
+    { text: "BOg EXTIA",    h: 24, y: 146, x: 200, conf: 0.73 }, // badge misread, no digits
+];
+const p = parseLabel(ponds, "POND'S DREAMFLOWER lacum powder fragrant PINK LILY");
+check("personal care: brand", p.brand, "Pond'S");
+check("personal care: name", p.name, "Dreamflower");
+check("personal care: flavor", p.flavor, "Pink Lily");
+check("personal care: EXTRA badge not qty", p.quantity, "");
+
+// EXTRA in rawText also skipped
+check("EXTRA badge in rawText skipped", parseLabel([], "50 g EXTRA POND'S DREAMFLOWER").quantity, "");
+
 // price extraction
 check("MRP Rs price", parseLabel([], "MRP Rs. 25 Net Qty 39 g").price, "₹25");
 check("rupee symbol price", parseLabel([], "₹ 199 Saffola Masala Oats").price, "₹199");

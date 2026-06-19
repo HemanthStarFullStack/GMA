@@ -101,7 +101,7 @@ export default function ScanPage() {
                 const pr = await fetch("/api/predict", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: d.name, brand: d.brand, unit: d.quantity, size: d.quantity, category: "Other" }),
+                    body: JSON.stringify({ name: d.name, brand: d.brand, flavor: d.flavor, unit: d.quantity, size: d.quantity, category: "Other" }),
                 });
                 const pj = await pr.json();
                 if (pj.success) {
@@ -114,6 +114,7 @@ export default function ScanPage() {
                 ...emptyForm(),
                 name: d.name,
                 brand: d.brand || "",
+                flavor: d.flavor || "",
                 unit: d.quantity || "units",
                 price: d.price || "",
                 averageDuration,
@@ -219,9 +220,13 @@ export default function ScanPage() {
             return;
         }
         const returnMode: Mode = mode === "manual" ? "manual" : "confirm";
+        // "units" is the default fallback, not a real size — omit it from the
+        // slug so the same product scanned twice (once with size, once without)
+        // resolves to the same catalogue entry rather than creating a duplicate.
+        const unitPart = form.unit && form.unit.toLowerCase() !== "units" ? form.unit : "";
         const productId =
             form.source === "ocr"
-                ? `OCR-${slugify([form.brand, form.name, form.unit].filter(Boolean).join(" "))}`
+                ? `OCR-${slugify([form.brand, form.name, unitPart].filter(Boolean).join(" "))}`
                 : form.barcode || `MANUAL-${Date.now()}`;
         setMode("saving");
         try {
