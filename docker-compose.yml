@@ -21,6 +21,9 @@ services:
       ADMIN_SECRET: ${ADMIN_SECRET:-}
       # Internal OCR sidecar (label scanning) — reached over the compose network.
       OCR_URL: ${OCR_URL:-http://ocr:4000}
+      # Optional higher-quality label reader: PaddleOCR-VL served by llama-server
+      # on the host (GPU). Empty disables it -> the app uses the PP-OCRv5 sidecar.
+      VISION_OCR_URL: ${VISION_OCR_URL:-http://host.docker.internal:8185}
       # Local-LLM fallback: by default use Ollama running on the host machine.
       # Set LOCAL_LLM_ENABLED=false to disable the tier entirely.
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}

@@ -58,5 +58,20 @@ const BACK_RAW = " l)\nINGREDIENTS\nAe  \nConcentrate 4%,\n\nxidant [NS300].\n%u
     check("6 back panel MRP (not batch/RDA)", { price: r.price, backPanel: String(r.backPanel) }, { price: "₹198", backPanel: "true" });
 }
 
+// --- Line-text mode (PaddleOCR-VL plain text, no bounding boxes) ---
+// The real transcription PaddleOCR-VL returned for the Storia front.
+check("7 VLM line-text front", parseLabel([], "NO ADDED SUGAR\nStoria\nJUICE\nPOMEGRANATE"),
+    { name: "Juice", brand: "Storia", flavor: "Pomegranate" });
+
+// VLM line-text with a different brand/flavor, marketing on top.
+check("8 VLM line-text generic", parseLabel([], "100% NATURAL\nTropicana\nJUICE\nORANGE"),
+    { name: "Juice", brand: "Tropicana", flavor: "Orange" });
+
+// VLM back-panel text still yields MRP + size, flags backPanel.
+{
+    const r = parseLabel([], "NUTRITION INFORMATION\nPer 100 ml\nEnergy 46 kcal\nNet Qty 750 ml\nMRP Rs 198.00\nBatch No RS.0.26\nIngredients: Water, Pomegranate Concentrate");
+    check("9 VLM back-panel", { price: r.price, backPanel: String(r.backPanel) }, { price: "₹198", backPanel: "true" });
+}
+
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILED`);
 if (fails) process.exit(1);

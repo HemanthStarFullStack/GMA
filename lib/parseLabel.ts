@@ -166,11 +166,21 @@ function looksLikeBackPanel(rawText: string): boolean {
 
 export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
     const rawText = (fullText || items.map((i) => i.text).join(" ")).trim();
-    const quantity = extractQuantity(items, rawText);
+
+    // Line-text mode: a plain-text reader (e.g. PaddleOCR-VL) gives clean text
+    // but no bounding boxes. Synthesize one "item" per line so the same
+    // brand/name/flavor logic applies. No geometry, so every line gets equal
+    // height/confidence and selection falls back to reading order + the
+    // marketing/flavor/pool rules — which work well on clean text.
+    const workItems: OcrItem[] = items.length > 0
+        ? items
+        : rawText.split(/\r?\n/).map((line, i) => ({ text: line.trim(), h: 1, y: i, x: 0, conf: 1 })).filter((it) => it.text);
+
+    const quantity = extractQuantity(workItems, rawText);
     const price = extractPrice(rawText);
     const backPanel = looksLikeBackPanel(rawText);
 
-    const cand = items
+    const cand = workItems
         .filter((i) => i.conf >= 0.5)
         .map((i) => ({ h: i.h, y: i.y, conf: i.conf, text: clean(i.text) }))
         .filter((i) => /\p{L}{2,}/u.test(i.text)) // must contain real letters
