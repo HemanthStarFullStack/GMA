@@ -12,7 +12,11 @@
  */
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-const MODEL = process.env.OLLAMA_STRUCT_MODEL || 'qwen2.5:1.5b';
+// 0.5b keeps the GPU roomy next to PaddleOCR-VL (~640 MB free vs ~88 MB with
+// the 1.5b) and still resolves brand/name fast. The 1.5b is slightly better at
+// inferring a product type on bare brand+flavor labels — bump this env to it if
+// you free up VRAM.
+const MODEL = process.env.OLLAMA_STRUCT_MODEL || 'qwen2.5:0.5b';
 const ENABLED = process.env.LABEL_LLM_ENABLED !== 'false';
 
 let lastProbe = { at: 0, ok: false };
