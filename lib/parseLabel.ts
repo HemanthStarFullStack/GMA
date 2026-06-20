@@ -16,6 +16,32 @@ const PRODUCT_TYPE_RE =
 const hasUppercase = (s: string) => /\p{Lu}/u.test(s);
 function isProductType(text: string): boolean { return PRODUCT_TYPE_RE.test(text); }
 
+// Marketing / claim text. These are often the BIGGEST type on a pack ("NO ADDED
+// SUGAR", "100% NATURAL") and otherwise hijack the brand/name slot. OCR garbles
+// big stylised claims ("NO ADDED SUGAR" → "NO SER"), so we also catch a bare
+// "NO <word>" and stray claim fragments. Kept tight to avoid demoting real names.
+function isMarketing(text: string): boolean {
+    const s = text.toLowerCase().trim();
+    if (/\b(no\s*added|added\s*sugar|no\s*sugar|sugar\s*free|no\s*preservativ|preservative\s*free|no\s*artificial|100\s*%?|natural|real\s*fruit|with\s*real|no\s*colour|no\s*color)\b/.test(s)) return true;
+    if (/^no\s+\w{2,}$/.test(s)) return true;                 // garbled "no ser" / "no uer" / "no added"
+    if (/^(added|sugar|free|combo|offer|new)$/.test(s)) return true; // stray claim fragments
+    return false;
+}
+
+// Common flavor/variant words (esp. Indian beverages & snacks). Matching the
+// flavor by dictionary is far more reliable than guessing by font size.
+const FLAVORS = [
+    "mixed fruit", "mixed berry", "black currant", "tender coconut", "sweet lime",
+    "aam panna", "pomegranate", "muskmelon", "watermelon", "blackcurrant",
+    "butterscotch", "pistachio", "strawberry", "blueberry", "raspberry",
+    "cranberry", "pineapple", "chocolate", "tamarind", "cardamom", "mosambi",
+    "coconut", "vanilla", "almond", "saffron", "elaichi", "litchi", "lychee",
+    "ginger", "orange", "masala", "banana", "cherry", "guava", "jamun", "mango",
+    "apple", "grape", "lemon", "lime", "mint", "kesar", "pista", "badam", "rose",
+    "kokum", "jeera", "mojito", "tulsi", "amla", "cola", "peach", "plum", "aam",
+];
+const FLAVOR_RE = new RegExp(`\\b(${FLAVORS.join("|")})\\b`, "i");
+
 // Map every unit spelling OCR might emit onto a canonical form.
 const UNIT_CANON: Record<string, string> = {
     kg: "kg", kgs: "kg",
@@ -131,45 +157,52 @@ export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
         hasUppercase(c.text) && c.conf >= 0.85 && !/\d/.test(c.text) &&
         c.text.split(/\s+/).length <= 5 && !isProductType(c.text);
 
+    // Flavor/variant by dictionary first — high precision, font-size independent.
+    const flavorHit = cand.map((c) => c.text.match(FLAVOR_RE)?.[1]).find(Boolean) ?? "";
+
+    // Candidates eligible to be brand/name: drop marketing claims, which are
+    // often the biggest type and would otherwise be picked as the brand.
+    const usable = cand.filter((c) => !isMarketing(c.text));
+    // Prominence = font height weighted by OCR confidence, so a crisp real brand
+    // (conf 1.0) beats a garbled giant claim (conf 0.5).
+    const prominence = (c: { h: number; conf: number }) => c.h * Math.max(c.conf, 0.1);
+
     let name = "";
     let brand = "";
-    let flavor = "";
+    let flavor = flavorHit;
 
     // Product-type check first: the grocery pool covers food only, so if we see
     // "talcum powder", "shampoo", etc. we must not use an OFO pool match for "pink
     // lily" (which could be a tea or flower product in the pool).
     if (cand.some((c) => isProductType(c.text))) {
-        // Personal care / household: biggest text is the brand (e.g. "POND'S").
-        // The product name (e.g. "DREAMFLOWER") is the high-confidence, uppercase,
-        // non-type item closest in y to the brand. Flavor/scent is the next one.
-        brand = cand[0]?.text ?? "";
-        const brandY = cand[0]?.y ?? 0;
-        const nameCands = cand
+        // Personal care / household: biggest non-marketing text is the brand
+        // (e.g. "POND'S"). The product name (e.g. "DREAMFLOWER") is the
+        // high-confidence, uppercase, non-type item closest in y to the brand.
+        const pc = usable.length ? usable : cand;
+        brand = pc[0]?.text ?? "";
+        const brandY = pc[0]?.y ?? 0;
+        const nameCands = pc
             .filter((c, i) => i !== 0 && isNameCand(c))
             .sort((a, b) => Math.abs(a.y - brandY) - Math.abs(b.y - brandY));
-        name = nameCands[0]?.text ?? cand.find((c) => isProductType(c.text))?.text ?? "";
-        flavor = nameCands.slice(1).find((c) => c.text.split(/\s+/).length <= 4)?.text ?? "";
+        name = nameCands[0]?.text ?? pc.find((c) => isProductType(c.text))?.text ?? "";
+        if (!flavor) flavor = nameCands.slice(1).find((c) => c.text.split(/\s+/).length <= 4)?.text ?? "";
     } else {
-        const productIdx = cand.findIndex((c) => findProductTerm(c.text));
+        const productIdx = usable.findIndex((c) => findProductTerm(c.text));
         if (productIdx >= 0) {
-            // Food pool match: pool term = product name, biggest non-pool text = brand.
-            name = cand[productIdx].text;
-            brand = cand.find((c, i) => i !== productIdx && !findProductTerm(c.text))?.text ?? "";
-            flavor = cand.find((c) =>
-                c.text !== name && c.text !== brand &&
-                !isProductType(c.text) && !/\d/.test(c.text) &&
-                c.text.split(/\s+/).length <= 4 && hasUppercase(c.text)
-            )?.text ?? "";
+            // Food pool match: pool term = product name; most prominent remaining
+            // non-pool, non-flavor candidate = brand (height × confidence).
+            name = usable[productIdx].text;
+            brand = usable
+                .filter((c, i) => i !== productIdx && !findProductTerm(c.text) && !FLAVOR_RE.test(c.text))
+                .sort((a, b) => prominence(b) - prominence(a))[0]?.text ?? "";
         } else {
-            // Font-size fallback: biggest = name, next on a different line = brand.
-            name = cand[0]?.text ?? "";
-            const nameY = cand[0]?.y ?? 0;
-            const nameH = cand[0]?.h ?? 0;
-            brand =
-                cand.slice(1).find((c) => Math.abs(c.y - nameY) > nameH * 0.5)?.text ??
-                cand[1]?.text ??
-                "";
-            flavor = cand.find((c) =>
+            // No pool match: rank by prominence. Biggest = name, next = brand.
+            const ranked = [...usable].sort((a, b) => prominence(b) - prominence(a));
+            name = ranked[0]?.text ?? "";
+            brand = ranked.find((c) => c.text !== name && !FLAVOR_RE.test(c.text))?.text ?? ranked[1]?.text ?? "";
+        }
+        if (!flavor) {
+            flavor = usable.find((c) =>
                 c.text !== name && c.text !== brand &&
                 !isProductType(c.text) && !/\d/.test(c.text) &&
                 c.text.split(/\s+/).length <= 4 && hasUppercase(c.text)

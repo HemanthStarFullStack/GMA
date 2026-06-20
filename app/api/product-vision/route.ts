@@ -37,6 +37,11 @@ export async function POST(request: Request) {
         }
         const ocr: { text?: string; items?: OcrItem[] } = await res.json();
         const parsed = parseLabel(ocr.items ?? [], ocr.text ?? '');
+        // Audit: what OCR saw vs what we parsed — makes misreads debuggable via logs.
+        console.log('[vision]', JSON.stringify({
+            raw: ocr.text, name: parsed.name, brand: parsed.brand,
+            flavor: parsed.flavor, quantity: parsed.quantity, price: parsed.price, backPanel: parsed.backPanel,
+        }));
 
         // On a back/nutrition panel the brand and product name aren't present
         // (they live on the front) — the "name" we'd pick is admin/nutrition
