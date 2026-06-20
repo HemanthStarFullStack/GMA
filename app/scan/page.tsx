@@ -200,13 +200,38 @@ export default function ScanPage() {
             const vis = await visRes.json();
             const q = vis.data?.quantity;
             const p = vis.data?.price;
-            if (q || p) {
-                setForm((f) => ({ ...f, ...(q ? { unit: q } : {}), ...(p ? { price: p } : {}) }));
-                const parts = [q && `size ${q}`, p && `price ${p}`].filter(Boolean).join(", ");
-                setToast(`Back read — ${parts} filled in.`);
-            } else {
+            if (!q && !p) {
                 setToast("Couldn't find details on the back — set them manually.");
+                return;
             }
+            const nextUnit = q || form.unit;
+            const nextPrice = p || form.price;
+            setForm((f) => ({ ...f, ...(q ? { unit: q } : {}), ...(p ? { price: p } : {}) }));
+            const parts = [q && `size ${q}`, p && `price ${p}`].filter(Boolean).join(", ");
+
+            // Size (and price) are strong signals for shelf life — a 1 L bottle
+            // lasts far longer than 200 ml. Refresh the duration estimate with the
+            // merged details. Needs a product name; if there's none yet (back-first
+            // flow) just fill the fields — the user re-estimates after naming it.
+            if (form.name.trim()) {
+                try {
+                    const pr = await fetch("/api/predict", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            name: form.name, brand: form.brand, flavor: form.flavor,
+                            price: nextPrice, category: form.category, unit: nextUnit, size: nextUnit,
+                        }),
+                    });
+                    const pj = await pr.json();
+                    if (pj.success) {
+                        setForm((f) => ({ ...f, averageDuration: pj.data.averageDuration, category: pj.data.category || f.category }));
+                        setToast(`Back read — ${parts} filled in. Estimate updated: ~${pj.data.averageDuration} days`);
+                        return;
+                    }
+                } catch { /* fall through to the plain confirmation toast */ }
+            }
+            setToast(`Back read — ${parts} filled in.`);
         } catch {
             setToast("Couldn't read the back photo.");
         } finally {
