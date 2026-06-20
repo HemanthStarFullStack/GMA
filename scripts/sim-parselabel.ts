@@ -50,5 +50,13 @@ check("5 personal care unaffected", parseLabel([
     I("PINK LILY", 38, 0.9, 600),
 ]), { brand: "Pond'S", name: "Dreamflower" });
 
+// --- Real back-panel OCR (from the [vision] log): MRP must be 198, not the
+//     batch number 0.26 or any nutrition/RDA value. ---
+const BACK_RAW = " l)\nINGREDIENTS\nAe  \nConcentrate 4%,\n\nxidant [NS300].\n%u\nANSADER AN ANCES (POMEGRANATE) SUBSTANC NUTRITIONAL INFORMATION\n(Approximate values)\nngi \nPer 100 ml KRDA*\nEnergy 46 kcal 2.30%\nFat Og 0%\nCarbohydrate* 11.4g\nTotal Sugar 11.4g\nAdded Sugar og 0%\nProtein Og 0%\nSodium 50 mg 2.50%\nPotassium 20 mg 0.60%\nVitamin C 8 mg\n10%\nRDA calculated as per 2000 kcal energy based on ICMR 2020.\nNet Qty.\nMRP\n 750ml\n(cof aes)\nUSP 198.00\nBatch No. RS.0.26 P\n Dat T68215001\n30/05/2026\n 2402/2027\n8900085\nALSWEETEN NATURALSEN CONTAINS ON-CALIC Er\nFRUIT SUGARS. T";
+{
+    const r = parseLabel([], BACK_RAW);
+    check("6 back panel MRP (not batch/RDA)", { price: r.price, backPanel: String(r.backPanel) }, { price: "₹198", backPanel: "true" });
+}
+
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILED`);
 if (fails) process.exit(1);

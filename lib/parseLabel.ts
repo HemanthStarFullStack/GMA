@@ -103,17 +103,43 @@ function extractQuantity(items: OcrItem[], rawText: string): string {
     return "";
 }
 
-// Extract MRP/price from raw text. Tries MRP+currency first (most specific),
-// then standalone ₹/Rs markers. Returns "₹X" or "" if not found.
-const PRICE_RE = [
-    /MRP\.?\s*(?:Rs\.?|₹)\s*(\d+(?:[.,]\d{1,2})?)/i,   // MRP Rs. 25  /  MRP ₹25
-    /(?:Rs\.?|₹)\s*(\d+(?:[.,]\d{1,2})?)(?:\s*\/-?)?/i, // Rs. 50/-  /  ₹199
-    /MRP\.?\s*:?\s*(\d+(?:[.,]\d{1,2})?)/i,              // MRP: 25  /  MRP 25.00
-];
+// Extract MRP from raw text. A back panel is full of numbers — batch codes,
+// dates, nutrition values, RDA % — so picking the first "Rs.NN" is unreliable
+// (it grabbed "Batch No. RS.0.26" instead of MRP 198.00). Instead score every
+// price-shaped number by its surroundings and take the best.
 function extractPrice(rawText: string): string {
-    for (const re of PRICE_RE) {
-        const m = rawText.match(re);
-        if (m) return `₹${m[1].replace(",", ".")}`;
+    const text = rawText.replace(/\s+/g, " ");
+    const cands: { val: number; score: number }[] = [];
+    const consider = (numStr: string, idx: number, len: number, currency: boolean) => {
+        const val = parseFloat(numStr.replace(",", "."));
+        if (!isFinite(val)) return;
+        const before = text.slice(Math.max(0, idx - 18), idx).toLowerCase();
+        const after = text.slice(idx + len, idx + len + 6).toLowerCase();
+        let score = currency ? 2 : 0;
+        if (/mrp/.test(before)) score += 12;                       // right after "MRP"
+        if (/(?:\brs\b|\binr\b|₹)/.test(before)) score += 4;       // currency marker
+        if (/batch|btch|bath/.test(before)) score -= 20;          // batch code, not price
+        if (/per|rda|energy|sodium|potass|protein|carb|\bfat\b|sugar|vitamin|kcal/.test(before)) score -= 15; // nutrition
+        if (/^\s*(?:ml|l|g|kg|mg|ltr|gm|gms|grams?|litres?|liters?|pcs?|pc)\b/.test(after)) score -= 30; // size, not price
+        if (/%/.test(after)) score -= 15;                          // RDA percentage
+        if (/\d{2}[\/.]\d/.test(before) || /[\/.]\d{2,4}\b/.test(after)) score -= 18; // date
+        if (/\.\d0$|\.00$|\.50$/.test(numStr)) score += 4;         // MRP-style decimal
+        if (val < 1) score -= 12;                                  // sub-rupee implausible as MRP
+        if (val > 100000) score -= 20;
+        cands.push({ val, score });
+    };
+    // currency-prefixed numbers (Rs. / ₹ / INR / MRP)
+    const cur = /(?:mrp|rs|inr|₹)\.?\s*:?\s*(\d+(?:[.,]\d{1,2})?)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = cur.exec(text))) consider(m[1], m.index + m[0].lastIndexOf(m[1]), m[1].length, true);
+    // standalone MRP-style decimals (e.g. "198.00" when OCR drops the ₹/MRP)
+    const dec = /\b(\d+\.\d{2})\b/g;
+    while ((m = dec.exec(text))) consider(m[1], m.index, m[1].length, false);
+
+    cands.sort((a, b) => b.score - a.score || b.val - a.val);
+    if (cands.length && cands[0].score > 0) {
+        const v = cands[0].val;
+        return `₹${Number.isInteger(v) ? v : v.toFixed(2)}`;
     }
     return "";
 }
