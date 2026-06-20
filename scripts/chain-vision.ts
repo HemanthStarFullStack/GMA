@@ -4,6 +4,7 @@
 import { readFileSync } from "fs";
 import { readLabelText } from "../lib/visionOcr";
 import { parseLabel } from "../lib/parseLabel";
+import { structureLabel } from "../lib/labelStructure";
 
 async function main() {
     const path = process.argv[2] || "scripts/_front.jpg";
@@ -20,7 +21,13 @@ async function main() {
     }
     console.log(`--- raw VLM text (${ms}ms) ---\n${text}`);
     const parsed = parseLabel([], text);
-    console.log("--- parsed ---");
+    const fields = parsed.backPanel ? null : await structureLabel(text);
+    if (fields) {
+        if (fields.brand) parsed.brand = fields.brand;
+        if (fields.name) parsed.name = fields.name;
+        if (!parsed.flavor) parsed.flavor = fields.flavor;
+    }
+    console.log(`--- final (reader=paddleocr-vl, structured=${!!fields}) ---`);
     console.log(JSON.stringify({ name: parsed.name, brand: parsed.brand, flavor: parsed.flavor, quantity: parsed.quantity, price: parsed.price, backPanel: parsed.backPanel }, null, 2));
 }
 main();

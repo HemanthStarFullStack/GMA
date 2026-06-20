@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { parseLabel, type OcrItem } from '@/lib/parseLabel';
 import { readLabelText } from '@/lib/visionOcr';
+import { structureLabel } from '@/lib/labelStructure';
 
 /**
  * Label OCR: client posts a product photo. We read the label with the best
@@ -60,10 +61,29 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, message: 'OCR failed' }, { status: 502 });
         }
 
-        // Audit: which reader ran, the raw text it read, and what we parsed —
-        // makes misreads debuggable from logs without re-pulling the image.
+        // Structuring layer: a small LLM decides brand/name/flavor from the OCR
+        // text — the call regex can't make ("is SWING a brand or a name?").
+        // Front only; price/qty/backPanel stay with the deterministic regex.
+        // Fail-soft: if the LLM is unavailable we keep parseLabel's guesses.
+        let structured = false;
+        if (!parsed.backPanel) {
+            const fields = await structureLabel(parsed.rawText);
+            if (fields) {
+                structured = true;
+                // LLM owns brand/name — it makes the "is SWING a brand or a name?"
+                // call that regex can't. Flavor stays with parseLabel's dictionary
+                // (the LLM drops flavors inconsistently); only fill from the LLM
+                // when the dictionary found nothing.
+                if (fields.brand) parsed.brand = fields.brand;
+                if (fields.name) parsed.name = fields.name;
+                if (!parsed.flavor) parsed.flavor = fields.flavor;
+            }
+        }
+
+        // Audit: which reader + whether the LLM structured it, the raw text, and
+        // the parsed fields — makes misreads debuggable from logs.
         console.log('[vision]', JSON.stringify({
-            reader, raw: vlmText ?? parsed.rawText, name: parsed.name, brand: parsed.brand,
+            reader, structured, raw: vlmText ?? parsed.rawText, name: parsed.name, brand: parsed.brand,
             flavor: parsed.flavor, quantity: parsed.quantity, price: parsed.price, backPanel: parsed.backPanel,
         }));
 
