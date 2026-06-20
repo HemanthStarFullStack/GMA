@@ -4,19 +4,15 @@ import { Product } from '@/lib/models';
 import { predictProductMeta } from '@/lib/gemini';
 
 /**
- * Barcode Lookup Service (no AI for the lookup itself).
+ * Barcode Lookup Service (no AI).
  *
  * Resolution order — the flow NEVER dead-ends:
  *   1. Local cache (Product collection) — instant, free, and self-learning.
  *      Any product ever added by any user resolves here on the next scan.
- *   2. Nothing found -> 404 NOT_FOUND, and the client opens the scan/manual
- *      form, which writes the product to the cache keyed by this barcode so it
- *      resolves instantly for everyone next time.
- *
- * We deliberately do NOT query open barcode databases (OpenFoodFacts /
- * OpenBeautyFacts): their Indian-FMCG coverage is poor, so they mostly 404 and
- * just add latency. Instead the cache, seeded by real scans, becomes our own
- * India-focused barcode catalogue.
+ *   2. OpenFoodFacts — free, unlimited, strong grocery/global coverage, returns images.
+ *   3. Open Beauty Facts — same org/API, covers personal care / cosmetics.
+ *   4. Nothing found -> 404 NOT_FOUND, and the client opens a manual-add form
+ *      (which then writes to the cache so it resolves instantly next time).
  */
 
 // UPC-A (12-digit) and EAN-13 (13-digit) encode the same product — UPC-A is
@@ -27,6 +23,19 @@ import { predictProductMeta } from '@/lib/gemini';
 function normalizeBarcode(raw: string): string {
     const digits = raw.replace(/\D/g, '');
     return digits.length === 12 ? '0' + digits : digits;
+}
+
+const CATEGORIES = [
+    'Dairy & Eggs', 'Beverages', 'Fruits & Vegetables', 'Meat & Seafood',
+    'Bakery', 'Pantry', 'Frozen Foods', 'Snacks', 'Condiments & Sauces',
+    'Cleaning & Household', 'Personal Care', 'Other',
+];
+
+function normalizeCategory(raw?: string | null): string {
+    if (!raw) return 'Other';
+    const lower = raw.toLowerCase();
+    const match = CATEGORIES.find((c) => lower.includes(c.toLowerCase().split(' ')[0]));
+    return match || 'Other';
 }
 
 export async function GET(request: Request) {
@@ -40,9 +49,9 @@ export async function GET(request: Request) {
 
         await connectDB();
 
-        // CACHE — shared, self-learning catalogue keyed by barcode (our India DB).
-        // Any product any account has already resolved lives here, so a repeat
-        // scan (by anyone) costs zero AI calls.
+        // 1. CACHE FIRST — shared, self-learning catalogue (the "RAG" store).
+        //    Any product any account has already resolved lives here, so a
+        //    repeat scan (by anyone) costs zero AI calls.
         const cached = await Product.findOne({ barcode });
         if (cached) {
             // If a prior scan only got a heuristic fallback (e.g. it was cached
@@ -81,12 +90,108 @@ export async function GET(request: Request) {
             });
         }
 
-        // Not in our catalogue yet — the client falls back to scan/manual, which
-        // writes it to the cache keyed by this barcode for instant future hits.
+        let productData: any = null;
+        let source = 'none';
+
+        // 2. OpenFoodFacts — free, unlimited, strong grocery/global coverage
+        try {
+            const offRes = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`, {
+                headers: { 'User-Agent': 'GMA-App/2.0 (portfolio project)' },
+            });
+            if (offRes.ok) {
+                const offData = await offRes.json();
+                if (offData.status === 1 && offData.product) {
+                    const p = offData.product;
+                    productData = {
+                        barcode: p.code || barcode,
+                        name: p.product_name || p.product_name_en || 'Unknown Product',
+                        brand: (p.brands || '').split(',')[0].trim(),
+                        flavor: '',
+                        category: normalizeCategory(p.categories?.split(',').pop()),
+                        imageUrl: p.image_front_url || p.image_url || null,
+                        unit: p.quantity || 'units',
+                    };
+                    source = 'openfoodfacts';
+                }
+            }
+        } catch (err) {
+            console.warn('OpenFoodFacts lookup failed:', err);
+        }
+
+        // 3. Open Beauty Facts — same org, same API, covers personal care / cosmetics
+        if (!productData) {
+            try {
+                const obfRes = await fetch(`https://world.openbeautyfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`, {
+                    headers: { 'User-Agent': 'GMA-App/2.0 (portfolio project)' },
+                });
+                if (obfRes.ok) {
+                    const obfData = await obfRes.json();
+                    if (obfData.status === 1 && obfData.product) {
+                        const p = obfData.product;
+                        productData = {
+                            barcode: p.code || barcode,
+                            name: p.product_name || p.product_name_en || 'Unknown Product',
+                            brand: (p.brands || '').split(',')[0].trim(),
+                            flavor: '',
+                            category: normalizeCategory(p.categories?.split(',').pop()),
+                            imageUrl: p.image_front_url || p.image_url || null,
+                            unit: p.quantity || 'units',
+                        };
+                        source = 'openbeautyfacts';
+                    }
+                }
+            } catch (err) {
+                console.warn('OpenBeautyFacts lookup failed:', err);
+            }
+        }
+
+        if (productData) {
+            // barcode is already normalized to EAN-13 at entry; pin the returned
+            // data to the same key so inventory productId stays consistent.
+            productData.barcode = barcode;
+
+            // Gemini decides both the realistic shelf-life and the category;
+            // the DB's category guess is only a fallback hint.
+            const meta = await predictProductMeta(
+                productData.name,
+                productData.brand || '',
+                productData.category,
+                productData.unit || 'units',
+                { flavor: productData.flavor || undefined },
+            );
+            const { averageDuration, category, predicted } = meta;
+            productData.category = category;
+            productData.price = '';
+
+            Product.findOneAndUpdate(
+                { barcode },
+                {
+                    $setOnInsert: {
+                        barcode,
+                        name: productData.name,
+                        brand: productData.brand || '',
+                        flavor: productData.flavor || '',
+                        category,
+                        imageUrl: productData.imageUrl || null,
+                        defaultUnit: productData.unit || 'units',
+                        averageDuration,
+                        ...(meta.perPersonDailyRate ? { perPersonDailyRate: meta.perPersonDailyRate } : {}),
+                        aiPredicted: predicted,
+                        addedBy: 'barcode',
+                        source,
+                        isDemo: false,
+                    },
+                },
+                { upsert: true },
+            ).catch((err: unknown) => console.warn('Product cache write failed:', err));
+
+            return NextResponse.json({ success: true, source, data: { ...productData, averageDuration } });
+        }
+
         return NextResponse.json(
             {
                 success: false,
-                message: 'Product not found in catalogue',
+                message: 'Product not found in any database',
                 code: 'NOT_FOUND',
                 barcode,
             },
