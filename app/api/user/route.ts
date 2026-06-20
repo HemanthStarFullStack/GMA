@@ -23,15 +23,19 @@ async function reestimateForHousehold(userId: string, newN: number, oldN: number
     }).select('barcode averageDuration perPersonDailyRate').lean();
 
     await Promise.all(products.map((p) => {
-        let newDuration: number;
-        if (p.perPersonDailyRate && p.perPersonDailyRate > 0) {
-            // Precise: rate was stored at scan time from raw Gemini servings/dailyUse
-            newDuration = Math.max(1, Math.round(1 / (p.perPersonDailyRate * newN)));
-        } else {
-            // Legacy product: no rate stored — scale linearly from current duration
-            newDuration = Math.max(1, Math.round((p.averageDuration * oldN) / newN));
+        // Always estimate from a fixed per-person rate, never from the previous
+        // (already-rounded) duration — rescaling the rounded value compounds error
+        // and drifts on repeated changes (e.g. N 1→4→1 wouldn't return to start).
+        let rate = p.perPersonDailyRate;
+        const set: Record<string, number> = {};
+        if (!rate || rate <= 0) {
+            // Legacy product: back-derive the rate once from current duration & size,
+            // persist it so every future change uses the stable precise path.
+            rate = 1 / (Math.max(1, p.averageDuration) * Math.max(1, oldN));
+            set.perPersonDailyRate = rate;
         }
-        return Product.updateOne({ barcode: p.barcode }, { $set: { averageDuration: newDuration } });
+        set.averageDuration = Math.max(1, Math.round(1 / (rate * newN)));
+        return Product.updateOne({ barcode: p.barcode }, { $set: set });
     }));
 
     console.log(`Re-estimated ${products.length} products for household ${oldN}→${newN} (math-only, no AI)`);
@@ -115,10 +119,20 @@ export async function PUT(request: Request) {
 
         let reestimating = 0;
         if (newFamily !== oldFamily) {
+            const now = new Date();
+            // Maintain the size-over-time log used for time-weighted depletion.
+            // Seed a baseline at the user's creation the first time, so history
+            // before this change is attributed to the OLD size, not the new one.
+            const log = (prev?.familySizeLog as { size: number; from: Date }[] | undefined) ?? [];
+            if (log.length === 0) {
+                log.push({ size: oldFamily, from: prev?.createdAt ?? new Date(0) });
+            }
+            log.push({ size: newFamily, from: now });
+
             // Record the transition for audit/history purposes.
             await User.updateOne(
                 { _id: session.user.id },
-                { $set: { prevFamilySize: oldFamily, familySizeChangedAt: new Date() } },
+                { $set: { prevFamilySize: oldFamily, familySizeChangedAt: now, familySizeLog: log } },
             );
 
             const inv = await Inventory.find({ userId: session.user.id, status: 'active', isDemo: { $ne: true } }).select('productId').lean();

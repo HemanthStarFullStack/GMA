@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
-import { ConsumptionLog, Inventory, Product } from '@/lib/models';
+import { ConsumptionLog, Inventory, Product, User } from '@/lib/models';
+import { depletion, type SizeSegment } from '@/lib/depletion';
 import { auth } from '@/auth';
 
 /**
@@ -21,10 +22,13 @@ export async function GET() {
         await connectDB();
         const userId = session.user.id;
 
-        const [currentInventory, consumptionLogs] = await Promise.all([
+        const [currentInventory, consumptionLogs, user] = await Promise.all([
             Inventory.find({ userId }).lean(),
             ConsumptionLog.find({ userId }).lean(),
+            User.findById(userId).select('familySize familySizeLog').lean(),
         ]);
+        const currentSize = Math.max(1, user?.familySize ?? 1);
+        const sizeLog = (user?.familySizeLog as SizeSegment[] | undefined) ?? [];
 
         // Join product details once, by barcode (productId === barcode).
         const barcodes = [
@@ -58,11 +62,14 @@ export async function GET() {
                     status: 'in_stock',
                     currentStock: 0,
                     purchaseDate: item.purchaseDate,
+                    rows: [],
                     consumptionHistory: { totalConsumed: 0, timesConsumed: 0, averageDurationDays: 0, lastConsumed: null },
                     predictions: null,
                 });
             }
-            map.get(id).currentStock += item.quantity;
+            const entry = map.get(id);
+            entry.currentStock += item.quantity;
+            entry.rows.push({ purchaseDate: item.purchaseDate, qty: item.quantity });
         }
 
         // Fold in consumption history.
@@ -104,12 +111,32 @@ export async function GET() {
             }
 
             if (product.status === 'in_stock' && avgDuration > 0) {
-                const consumptionRate = 1 / avgDuration; // units/day
-                const daysUntilEmpty = product.currentStock / consumptionRate;
+                const prod = productMap.get(product.productId);
+                const isPerPerson = prod?.category === 'Personal Care';
+                // Time-weighted: deplete each purchase lot by how the household size
+                // actually varied over its life, then project the remainder forward.
+                const now = new Date();
+                const remaining = (product.rows as { purchaseDate: Date; qty: number }[]).reduce(
+                    (sum, row) =>
+                        sum +
+                        depletion({
+                            purchaseDate: row.purchaseDate,
+                            qty: row.qty,
+                            now,
+                            perPersonDailyRate: prod?.perPersonDailyRate ?? null,
+                            averageDuration: avgDuration,
+                            currentSize,
+                            isPerPerson,
+                            sizeLog,
+                        }).remaining,
+                    0,
+                );
+                const consumptionRate = 1 / avgDuration; // units/day at current size
+                const daysUntilEmpty = remaining / consumptionRate;
                 product.predictions = {
                     consumptionRate: Math.round(consumptionRate * 100) / 100,
                     daysUntilEmpty: Math.round(daysUntilEmpty * 10) / 10,
-                    restockDate: new Date(Date.now() + daysUntilEmpty * 86400000).toISOString(),
+                    restockDate: new Date(now.getTime() + daysUntilEmpty * 86400000).toISOString(),
                     needsRestock: daysUntilEmpty < 7,
                 };
             }

@@ -83,19 +83,37 @@ export default function PhotoCapture({ onCapture, onManual, onError }: PhotoCapt
 
     const onFile = async (file?: File) => {
         if (!file) return;
+        // Try createImageBitmap first (fast path). Falls back to an <img> element
+        // for HEIC/HEIF on desktop Chrome, which can't decode them directly but
+        // can display them via <img> → canvas → JPEG conversion.
+        const toJpeg = async (src: CanvasImageSource, w: number, h: number): Promise<Blob | null> => {
+            const scale = Math.min(1, MAX_EDGE / Math.max(w, h));
+            const c = document.createElement("canvas");
+            c.width = Math.round(w * scale);
+            c.height = Math.round(h * scale);
+            c.getContext("2d")?.drawImage(src, 0, 0, c.width, c.height);
+            return new Promise((res) => c.toBlob((b) => res(b), "image/jpeg", 0.85));
+        };
         try {
             const bmp = await createImageBitmap(file);
-            const scale = Math.min(1, MAX_EDGE / Math.max(bmp.width, bmp.height));
-            const c = document.createElement("canvas");
-            c.width = Math.round(bmp.width * scale);
-            c.height = Math.round(bmp.height * scale);
-            c.getContext("2d")?.drawImage(bmp, 0, 0, c.width, c.height);
-            const blob = await new Promise<Blob>((res) => c.toBlob((b) => res(b ?? file), "image/jpeg", 0.85));
-            onCapture(blob);
-        } catch {
-            // createImageBitmap fails for unsupported formats (e.g. HEIC) — fall back to raw file
-            onCapture(file);
+            const blob = await toJpeg(bmp, bmp.width, bmp.height);
+            if (blob) { onCapture(blob); return; }
+        } catch { /* fall through to img-element path */ }
+        // img-element path: browser can display what createImageBitmap can't decode
+        const url = URL.createObjectURL(file);
+        try {
+            const img = await new Promise<HTMLImageElement>((res, rej) => {
+                const el = new Image();
+                el.onload = () => res(el);
+                el.onerror = rej;
+                el.src = url;
+            });
+            const blob = await toJpeg(img, img.naturalWidth, img.naturalHeight);
+            if (blob) { onCapture(blob); return; }
+        } catch { /* nothing left to try */ } finally {
+            URL.revokeObjectURL(url);
         }
+        onError?.("This image format isn't supported. Try taking a photo directly.");
     };
 
     return (

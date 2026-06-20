@@ -4,7 +4,8 @@ import { auth } from "@/auth";
 import UserMenu from "@/components/UserMenu";
 import HeroCard, { type HeroItem } from "@/components/HeroCard";
 import connectDB from "@/lib/mongodb";
-import { Inventory, Product } from "@/lib/models";
+import { Inventory, Product, User } from "@/lib/models";
+import { depletion, type SizeSegment } from "@/lib/depletion";
 
 async function getHeroItems(userId: string): Promise<HeroItem[]> {
     await connectDB();
@@ -17,21 +18,33 @@ async function getHeroItems(userId: string): Promise<HeroItem[]> {
     if (invItems.length === 0) return [];
 
     const barcodes = invItems.map((i) => i.productId);
-    const products = await Product.find({ barcode: { $in: barcodes } }).lean();
+    const [products, user] = await Promise.all([
+        Product.find({ barcode: { $in: barcodes } }).lean(),
+        User.findById(userId).select("familySize familySizeLog").lean(),
+    ]);
     const prodMap = new Map(products.map((p) => [p.barcode, p]));
+    const currentSize = Math.max(1, user?.familySize ?? 1);
+    const sizeLog = (user?.familySizeLog as SizeSegment[] | undefined) ?? [];
 
-    const now = Date.now();
+    const now = new Date();
     const items: HeroItem[] = invItems.map((item) => {
         const prod = prodMap.get(item.productId);
-        const daysSince = Math.floor((now - new Date(item.purchaseDate).getTime()) / 86_400_000);
-        const totalDays = item.quantity * (prod?.averageDuration ?? 14);
-        const daysLeft = Math.max(0, totalDays - daysSince);
+        const { daysLeft } = depletion({
+            purchaseDate: item.purchaseDate,
+            qty: item.quantity,
+            now,
+            perPersonDailyRate: prod?.perPersonDailyRate ?? null,
+            averageDuration: prod?.averageDuration ?? 14,
+            currentSize,
+            isPerPerson: prod?.category === "Personal Care",
+            sizeLog,
+        });
         return {
             name: prod?.name ?? "Unknown Product",
             brand: prod?.brand ?? "",
             quantity: item.quantity,
             unit: item.unit,
-            daysLeft,
+            daysLeft: Math.max(0, Math.round(daysLeft)),
         };
     });
 
@@ -53,7 +66,7 @@ export default async function HomePage() {
     ];
 
     return (
-        <div className="h-screen flex flex-col overflow-hidden">
+        <div className="min-h-dvh flex flex-col lg:h-dvh lg:overflow-hidden">
             <header className="container mx-auto px-5 py-4 flex items-center justify-between shrink-0">
                 <div className="flex items-baseline gap-2">
                     <span className="font-display text-2xl font-semibold text-ink tracking-tight">GMA</span>
@@ -66,8 +79,8 @@ export default async function HomePage() {
                 )}
             </header>
 
-            <main className="flex-1 container mx-auto px-5 flex flex-col justify-between py-4 overflow-hidden">
-                <section className="grid lg:grid-cols-12 gap-6 items-center flex-1">
+            <main className="flex-1 container mx-auto px-5 flex flex-col py-6 gap-8 lg:gap-0 lg:justify-between lg:py-4 lg:overflow-hidden">
+                <section className="grid lg:grid-cols-12 gap-6 items-start lg:items-center lg:flex-1">
                     <div className="lg:col-span-7 rise">
                         <p className="kicker mb-2">Know your kitchen</p>
                         <h1 className="font-display text-ink text-4xl sm:text-5xl lg:text-6xl font-semibold leading-[0.98]">

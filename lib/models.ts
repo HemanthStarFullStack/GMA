@@ -13,6 +13,7 @@ export interface IUser extends Document {
     tourCompleted: boolean; // whether the new-user guided tour has run
     familySizeChangedAt?: Date; // when household size was last changed
     prevFamilySize?: number;    // household size before the last change
+    familySizeLog?: { size: number; from: Date }[]; // household size over time (for time-weighted depletion)
     preferences: {
         surveyFrequency: 'always' | 'occasional';
     };
@@ -27,6 +28,7 @@ const UserSchema = new Schema<IUser>({
     familySize: { type: Number, default: 1 },
     familySizeChangedAt: { type: Date },
     prevFamilySize: { type: Number },
+    familySizeLog: { type: [{ size: Number, from: Date }], default: undefined },
     createdAt: { type: Date, default: Date.now },
     demoSeeded: { type: Boolean, default: false },
     tourCompleted: { type: Boolean, default: false },
