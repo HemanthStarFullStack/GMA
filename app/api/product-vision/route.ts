@@ -60,9 +60,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, message: 'OCR failed' }, { status: 502 });
         }
 
-        // Audit: which reader ran + what it parsed — makes misreads debuggable via logs.
+        // Audit: which reader ran, the raw text it read, and what we parsed —
+        // makes misreads debuggable from logs without re-pulling the image.
         console.log('[vision]', JSON.stringify({
-            reader, name: parsed.name, brand: parsed.brand,
+            reader, raw: vlmText ?? parsed.rawText, name: parsed.name, brand: parsed.brand,
             flavor: parsed.flavor, quantity: parsed.quantity, price: parsed.price, backPanel: parsed.backPanel,
         }));
 

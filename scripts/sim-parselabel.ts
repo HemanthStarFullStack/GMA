@@ -73,5 +73,10 @@ check("8 VLM line-text generic", parseLabel([], "100% NATURAL\nTropicana\nJUICE\
     check("9 VLM back-panel", { price: r.price, backPanel: String(r.backPanel) }, { price: "₹198", backPanel: "true" });
 }
 
+// --- Brand + flavor only, no product-type word (real "SWING" juice front).
+//     Flavor line must NOT become the brand. ---
+check("10 brand+flavor only (Swing)", parseLabel([], "SWING\nZesty Pomegranate"),
+    { name: "Swing", brand: "", flavor: "Zesty Pomegranate" });
+
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILED`);
 if (fails) process.exit(1);

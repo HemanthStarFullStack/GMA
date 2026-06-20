@@ -194,7 +194,10 @@ export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
         c.text.split(/\s+/).length <= 5 && !isProductType(c.text);
 
     // Flavor/variant by dictionary first — high precision, font-size independent.
-    const flavorHit = cand.map((c) => c.text.match(FLAVOR_RE)?.[1]).find(Boolean) ?? "";
+    // Prefer the whole line containing the flavor word ("Zesty Pomegranate",
+    // "Mixed Fruit") over the bare match, capped to a short phrase.
+    const flavorLine = cand.find((c) => FLAVOR_RE.test(c.text) && c.text.split(/\s+/).length <= 4);
+    const flavorHit = flavorLine?.text ?? cand.map((c) => c.text.match(FLAVOR_RE)?.[1]).find(Boolean) ?? "";
 
     // Candidates eligible to be brand/name: drop marketing claims, which are
     // often the biggest type and would otherwise be picked as the brand.
@@ -232,10 +235,13 @@ export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
                 .filter((c, i) => i !== productIdx && !findProductTerm(c.text) && !FLAVOR_RE.test(c.text))
                 .sort((a, b) => prominence(b) - prominence(a))[0]?.text ?? "";
         } else {
-            // No pool match: rank by prominence. Biggest = name, next = brand.
-            const ranked = [...usable].sort((a, b) => prominence(b) - prominence(a));
+            // No pool match: rank by prominence among non-flavor lines. Biggest =
+            // name, next = brand. A flavor line is never name/brand (it's the
+            // variant), so a "SWING / Zesty Pomegranate" front yields name=Swing,
+            // flavor=Zesty Pomegranate — not brand=Zesty Pomegranate.
+            const ranked = usable.filter((c) => !FLAVOR_RE.test(c.text)).sort((a, b) => prominence(b) - prominence(a));
             name = ranked[0]?.text ?? "";
-            brand = ranked.find((c) => c.text !== name && !FLAVOR_RE.test(c.text))?.text ?? ranked[1]?.text ?? "";
+            brand = ranked.find((c) => c.text !== name)?.text ?? "";
         }
         if (!flavor) {
             flavor = usable.find((c) =>
