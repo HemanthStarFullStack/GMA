@@ -10,9 +10,12 @@ import { structureLabel } from '@/lib/labelStructure';
  * price}. The scan form stays editable so the user fixes any misreads.
  *
  * Reader order (never dead-ends):
- *   1. PaddleOCR-VL on the host GPU (cleaner text) — if VISION_OCR_URL is set
- *      and the server is up.
- *   2. PP-OCRv5 sidecar (CPU, free, always present) — fallback.
+ *   1. PP-OCRv5 sidecar (CPU, free, always present) — FAST (~1-3s) and, with the
+ *      qwen structuring layer cleaning its text, as accurate on brand/flavor as
+ *      the VLM. This is the hot path.
+ *   2. PaddleOCR-VL on the host GPU — slower (~8-15s on a GTX 1050) but reads
+ *      messy shots a touch better; used only when the sidecar finds nothing
+ *      usable, so the wait is paid rarely instead of every scan.
  */
 const OCR_URL = process.env.OCR_URL || 'http://localhost:4000';
 const MAX_BYTES = 12 * 1024 * 1024;
@@ -47,15 +50,22 @@ export async function POST(request: Request) {
     }
 
     try {
-        // 1. Try PaddleOCR-VL (cleaner). 2. Fall back to the PP-OCRv5 sidecar.
-        let parsed: ReturnType<typeof parseLabel> | null = null;
-        let reader = 'paddleocr-vl';
-        const vlmText = await readLabelText(buf);
-        if (vlmText) {
-            parsed = parseLabel([], vlmText);
-        } else {
-            reader = 'ppocrv5';
-            parsed = await readWithSidecar(buf);
+        // Whether a parse is good enough to ship: a front shot needs a name; a
+        // back/nutrition panel just needs the net quantity.
+        const isUsable = (p: ReturnType<typeof parseLabel> | null) =>
+            !!p && (p.backPanel ? !!p.quantity : !!p.name);
+
+        // 1. PP-OCRv5 sidecar first — fast, and good enough once qwen structures
+        //    the text. 2. Only if it found nothing usable, pay for PaddleOCR-VL.
+        let reader = 'ppocrv5';
+        let vlmText: string | null = null;
+        let parsed = await readWithSidecar(buf);
+        if (!isUsable(parsed)) {
+            vlmText = await readLabelText(buf);
+            if (vlmText) {
+                reader = 'paddleocr-vl';
+                parsed = parseLabel([], vlmText);
+            }
         }
         if (!parsed) {
             return NextResponse.json({ success: false, message: 'OCR failed' }, { status: 502 });
@@ -96,8 +106,7 @@ export async function POST(request: Request) {
             parsed.brand = '';
         }
 
-        const useful = parsed.backPanel ? !!parsed.quantity : !!parsed.name;
-        return NextResponse.json({ success: useful, data: parsed });
+        return NextResponse.json({ success: isUsable(parsed), data: parsed });
     } catch (err: any) {
         console.warn('product-vision error:', err?.message || err);
         return NextResponse.json({ success: false, message: 'OCR service unavailable' }, { status: 503 });
