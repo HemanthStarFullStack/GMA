@@ -71,7 +71,18 @@ export async function structureLabel(text: string): Promise<LabelFields | null> 
         if (!match) return null;
         const obj = JSON.parse(match[0]);
         const s = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
-        const fields = { brand: s(obj.brand), name: s(obj.name), flavor: s(obj.flavor) };
+        // Anti-hallucination: brand and flavor MUST be printed on the label, so
+        // drop any value whose words aren't in the OCR text (the 0.5b invents
+        // brands like "Swing" / flavors like "Olive Oil" not on the pack). NAME is
+        // exempt — the model is allowed to infer a product type ("Juice") that the
+        // label only implies.
+        const norm = (v: string) => ` ${v.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+        const hay = norm(text);
+        const grounded = (v: string) => {
+            const words = norm(v).trim().split(' ').filter((w) => w.length >= 2);
+            return words.length && words.every((w) => hay.includes(w)) ? v : '';
+        };
+        const fields = { brand: grounded(s(obj.brand)), name: s(obj.name), flavor: grounded(s(obj.flavor)) };
         // Need at least a brand or a name to be worth using.
         return fields.brand || fields.name ? fields : null;
     } catch {

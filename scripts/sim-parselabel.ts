@@ -78,5 +78,28 @@ check("8 VLM line-text generic", parseLabel([], "100% NATURAL\nTropicana\nJUICE\
 check("10 brand+flavor only (Swing)", parseLabel([], "SWING\nZesty Pomegranate"),
     { name: "Swing", brand: "", flavor: "Zesty Pomegranate" });
 
+// --- Pool/flavor conflict: "chocolate" is both a flavor AND a pool term. It must
+//     stay the flavor; the real product ("muesli") must be the name. ---
+{
+    const r = parseLabel([], "Yoga\nSUPER MUESLI\n83% WHOLE GRAINS\nDark Chocolate\nCranberry");
+    check("11 muesli not chocolate", { name: r.name, brand: r.brand, flavor: r.flavor, confident: String(r.confident) },
+        { name: "Super Muesli", brand: "Yoga", flavor: "Dark Chocolate", confident: "true" });
+}
+
+// --- Back panel detected via statutory markers (no nutrition words), net weight
+//     read even though OCR dropped its unit, and the omega nutrient ignored. ---
+{
+    const r = parseLabel([], "Yoga Super Muesli\nHIGH OMEGA-3 (0.6 g)\nNet Weight: 400 Lot No 33\nMRP USP 350.00 Rs.0.88/g\nDate of Mfg 30/01/26\nBest Before");
+    check("12 back: net wt 400 g, MRP 350", { quantity: r.quantity, price: r.price, backPanel: String(r.backPanel) },
+        { quantity: "400 g", price: "₹350", backPanel: "true" });
+}
+
+// --- Promo "NEW PACK" must not become the product name or mark parse confident. ---
+{
+    const r = parseLabel([], "NEW PACK\nGlow\nLovely\nBright");
+    check("13 promo pack ignored", { name: r.name, confident: String(r.confident) },
+        { name: "Glow", confident: "false" });
+}
+
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILED`);
 if (fails) process.exit(1);

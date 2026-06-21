@@ -3,10 +3,24 @@
 // net quantity), name/brand by font size. Always imperfect; the scan form stays
 // editable so the user corrects whatever's wrong.
 
-import { findProductTerm } from "./groceryPool";
+import { findProductTerm as findPoolTerm } from "./groceryPool";
+
+// Generic packaging / promo words that slipped into the grocery pool. They appear
+// on countless packs ("NEW PACK", "VALUE PACK", "COMBO") and must not be treated
+// as the product name — that would wrongly mark a parse "confident".
+const POOL_STOP = new Set([
+    "pack", "packet", "combo", "offer", "value", "new", "family", "jumbo",
+    "saver", "refill", "piece", "pieces", "pcs", "box", "tin", "pouch",
+    "bottle", "jar", "carton", "free", "extra",
+]);
+// A pool match that isn't a generic packaging word.
+function findProductTerm(line: string): string | null {
+    const t = findPoolTerm(line);
+    return t && !POOL_STOP.has(t) ? t : null;
+}
 
 export type OcrItem = { text: string; h: number; y: number; x: number; conf: number };
-export type ParsedLabel = { name: string; brand: string; flavor: string; quantity: string; price: string; rawText: string; backPanel: boolean };
+export type ParsedLabel = { name: string; brand: string; flavor: string; quantity: string; price: string; rawText: string; backPanel: boolean; confident: boolean };
 
 // Personal care / household product-type patterns. OCR misreads are common so
 // the regex is loose: "lacum" matches "talcum", "powde" matches "powder", etc.
@@ -25,6 +39,7 @@ function isMarketing(text: string): boolean {
     if (/\b(no\s*added|added\s*sugar|no\s*sugar|sugar\s*free|no\s*preservativ|preservative\s*free|no\s*artificial|100\s*%?|natural|real\s*fruit|with\s*real|no\s*colour|no\s*color)\b/.test(s)) return true;
     if (/^no\s+\w{2,}$/.test(s)) return true;                 // garbled "no ser" / "no uer" / "no added"
     if (/^(added|sugar|free|combo|offer|new)$/.test(s)) return true; // stray claim fragments
+    if (/^(new|value|combo|family|jumbo|saver|mega|economy)\s+(pack|packet|offer|size)$/.test(s)) return true; // promo pack badges
     return false;
 }
 
@@ -68,6 +83,23 @@ function onSameLine(a: OcrItem, b: OcrItem): boolean {
 // Pick the pack's net quantity, not a nutrition ("per 100 g") or cooking
 // ("240 ml water") number. Scores each unit-bearing item by context.
 function extractQuantity(items: OcrItem[], rawText: string): string {
+    // Nutrient amounts ("OMEGA-3 (0.6 g)", "Protein 5 g") are not the pack size.
+    const NUTRIENT = /(omega|protein|fibre|fiber|fat|carb|sugar|sodium|potass|calcium|iron|energy|vitamin|cholesterol)\s*\S{0,6}$/i;
+
+    // The declared net quantity is authoritative — check it FIRST, before any
+    // scattered number (a back panel is full of nutrient amounts that would
+    // otherwise win, e.g. "OMEGA-3 (0.6 g)" beating "Net Weight 400 g").
+    const net = rawText.match(new RegExp(`net\\s*(?:qty|q|wt|weight|content|vol)\\.?\\s*:?\\s*(\\d+(?:[.,]\\d+)?)\\s*(${UNITS})\\b`, "i"));
+    if (net) return fmtQty(net[1], net[2]);
+    // Net declaration whose unit OCR dropped ("Net Weight: 400 Lot No"): take the
+    // number and assume the unit from the wording — weight→g, volume→ml.
+    const netNoUnit = rawText.match(/net\s*(wt|weight|qty|q|content|vol)\.?\s*:?\s*(\d{2,5})(?:[.,]\d+)?(?!\s*(?:%|\d))/i);
+    if (netNoUnit) {
+        const unit = /vol/i.test(netNoUnit[1]) ? "ml" : "g";
+        return fmtQty(netNoUnit[2], unit);
+    }
+
+    // No explicit net declaration: score each unit-bearing item by context.
     const cands: { num: string; unit: string; score: number; h: number }[] = [];
     for (const it of items) {
         const m = it.text.match(QTY);
@@ -80,6 +112,9 @@ function extractQuantity(items: OcrItem[], rawText: string): string {
         if (items.some((o) => /\bper\b/i.test(o.text) && onSameLine(o, it) && o.x < it.x && it.x - o.x < 220)) score -= 6;
         if (/^(ml|cl|l)$/i.test(UNIT_CANON[m[2].toLowerCase()] ?? m[2]) && /(water|cup|pour|cook|boil|flame)/i.test(low)) score -= 8;
         if (/\bextra\b/i.test(low)) score -= 8; // promo badge ("50 g EXTRA"), not net qty
+        if (NUTRIENT.test(low.slice(0, m.index)) || /\(\s*$/.test(it.text.slice(0, m.index))) score -= 12; // nutrient amount
+        const cu = UNIT_CANON[m[2].toLowerCase()];
+        if ((cu === "g" || cu === "ml") && parseFloat(m[1].replace(",", ".")) < 5) score -= 6; // implausibly small for a pack
         cands.push({ num: m[1], unit: m[2], score, h: it.h });
     }
     if (cands.length) {
@@ -87,17 +122,20 @@ function extractQuantity(items: OcrItem[], rawText: string): string {
         // Negative best score = unreliable (e.g. promo badge only); fall through to rawText.
         if (cands[0].score >= 0) return fmtQty(cands[0].num, cands[0].unit);
     }
-    // No item-level boxes (e.g. tests pass only rawText): prefer a net-qty
-    // declaration, else the first unit number that isn't a "per ..." or "extra" value.
-    const net = rawText.match(new RegExp(`net\\s*(?:qty|q|wt|weight|content|vol)\\.?\\s*:?\\s*(\\d+(?:[.,]\\d+)?)\\s*(${UNITS})`, "i"));
-    if (net) return fmtQty(net[1], net[2]);
+    // Last resort: first plausible unit number in raw text that isn't a "per ...",
+    // "extra", nutrient or parenthetical value.
     let m: RegExpExecArray | null;
     QTY_G.lastIndex = 0;
     while ((m = QTY_G.exec(rawText))) {
-        const before = rawText.slice(Math.max(0, m.index - 5), m.index).toLowerCase();
+        const before = rawText.slice(Math.max(0, m.index - 14), m.index).toLowerCase();
         const after = rawText.slice(m.index + m[0].length, m.index + m[0].length + 10).toLowerCase();
         if (/per\s*$/.test(before)) continue;
         if (/\bextra\b/.test(after)) continue; // promo badge
+        if (NUTRIENT.test(before)) continue;   // nutrition value, not pack size
+        if (/\($/.test(before.trim())) continue; // "(0.6 g)" parenthetical = nutrition
+        // Implausibly small for a pack net weight/volume — usually a nutrient amount.
+        const cu = UNIT_CANON[m[2].toLowerCase()];
+        if ((cu === "g" || cu === "ml") && parseFloat(m[1].replace(",", ".")) < 5) continue;
         return fmtQty(m[1], m[2]);
     }
     return "";
@@ -158,6 +196,10 @@ function titleCase(s: string): string {
 const BACK_HINTS = [
     "nutrition", "ingredient", "per 100", "per serve", "energy", "carbohydrate",
     "best before", "manufactur", "cooking instruction", "fssai", "marketed by", "storage",
+    // Statutory back/side-panel markers — a busy nutrition panel often OCRs
+    // without the words above but always carries these (Net Wt, MRP, Lot, Mfg).
+    "net wt", "net weight", "net qty", "net content", "mrp", "lot no", "batch no",
+    "date of mfg", "mfg date", "mfd", "use by", "consume before",
 ];
 function looksLikeBackPanel(rawText: string): boolean {
     const t = rawText.toLowerCase();
@@ -209,6 +251,10 @@ export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
     let name = "";
     let brand = "";
     let flavor = flavorHit;
+    // True when we found a real product identity (a food-pool or personal-care
+    // product type) plus a brand. The caller trusts this over the small LLM,
+    // which tends to corrupt/hallucinate cases the rules already nailed.
+    let confident = false;
 
     // Product-type check first: the grocery pool covers food only, so if we see
     // "talcum powder", "shampoo", etc. we must not use an OFO pool match for "pink
@@ -225,8 +271,15 @@ export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
             .sort((a, b) => Math.abs(a.y - brandY) - Math.abs(b.y - brandY));
         name = nameCands[0]?.text ?? pc.find((c) => isProductType(c.text))?.text ?? "";
         if (!flavor) flavor = nameCands.slice(1).find((c) => c.text.split(/\s+/).length <= 4)?.text ?? "";
+        confident = !!brand && !!name;
     } else {
-        const productIdx = usable.findIndex((c) => findProductTerm(c.text));
+        // A pool term that is ALSO a flavor word (chocolate, mango) is the variant,
+        // not the product — e.g. "Dark Chocolate" on a muesli pack. Prefer a
+        // non-flavor pool term ("muesli") as the name; only fall back to a
+        // flavor-ish term if that's the only pool match present.
+        const matched = (c: (typeof usable)[0]) => findProductTerm(c.text);
+        let productIdx = usable.findIndex((c) => { const t = matched(c); return !!t && !FLAVOR_RE.test(t); });
+        if (productIdx < 0) productIdx = usable.findIndex((c) => matched(c));
         if (productIdx >= 0) {
             // Food pool match: pool term = product name; most prominent remaining
             // non-pool, non-flavor candidate = brand (height × confidence).
@@ -234,6 +287,7 @@ export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
             brand = usable
                 .filter((c, i) => i !== productIdx && !findProductTerm(c.text) && !FLAVOR_RE.test(c.text))
                 .sort((a, b) => prominence(b) - prominence(a))[0]?.text ?? "";
+            confident = !!brand;
         } else {
             // No pool match: rank by prominence among non-flavor lines. Biggest =
             // name, next = brand. A flavor line is never name/brand (it's the
@@ -252,5 +306,5 @@ export function parseLabel(items: OcrItem[], fullText = ""): ParsedLabel {
         }
     }
 
-    return { name: titleCase(name), brand: titleCase(brand), flavor: titleCase(flavor), quantity, price, rawText, backPanel };
+    return { name: titleCase(name), brand: titleCase(brand), flavor: titleCase(flavor), quantity, price, rawText, backPanel, confident };
 }

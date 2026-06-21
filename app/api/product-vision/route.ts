@@ -10,12 +10,12 @@ import { structureLabel } from '@/lib/labelStructure';
  * price}. The scan form stays editable so the user fixes any misreads.
  *
  * Reader order (never dead-ends):
- *   1. PP-OCRv5 sidecar (CPU, free, always present) — FAST (~1-3s) and, with the
- *      qwen structuring layer cleaning its text, as accurate on brand/flavor as
- *      the VLM. This is the hot path.
- *   2. PaddleOCR-VL on the host GPU — slower (~8-15s on a GTX 1050) but reads
- *      messy shots a touch better; used only when the sidecar finds nothing
- *      usable, so the wait is paid rarely instead of every scan.
+ *   1. PaddleOCR-VL on the host GPU — the reader. Slower (~8-15s on a GTX 1050)
+ *      but reads stylised/curved label fonts far more cleanly than the sidecar
+ *      ("Dreamflower" vs "Nulate Y", "Fogg" vs "Pagrana"). Accuracy first.
+ *   2. PP-OCRv5 sidecar (CPU, free) — rescue ONLY: used when the GPU server is
+ *      unreachable, or the VLM returned nothing usable, so a scan never fails
+ *      outright. It is not in the normal path.
  */
 const OCR_URL = process.env.OCR_URL || 'http://localhost:4000';
 const MAX_BYTES = 12 * 1024 * 1024;
@@ -55,16 +55,17 @@ export async function POST(request: Request) {
         const isUsable = (p: ReturnType<typeof parseLabel> | null) =>
             !!p && (p.backPanel ? !!p.quantity : !!p.name);
 
-        // 1. PP-OCRv5 sidecar first — fast, and good enough once qwen structures
-        //    the text. 2. Only if it found nothing usable, pay for PaddleOCR-VL.
-        let reader = 'ppocrv5';
-        let vlmText: string | null = null;
-        let parsed = await readWithSidecar(buf);
+        // 1. PaddleOCR-VL is the reader (accuracy first). 2. Fall back to the CPU
+        //    sidecar only if the VLM is unreachable or read nothing usable, so a
+        //    scan never dead-ends — but every normal scan uses the VLM.
+        let reader = 'paddleocr-vl';
+        const vlmText = await readLabelText(buf);
+        let parsed = vlmText ? parseLabel([], vlmText) : null;
         if (!isUsable(parsed)) {
-            vlmText = await readLabelText(buf);
-            if (vlmText) {
-                reader = 'paddleocr-vl';
-                parsed = parseLabel([], vlmText);
+            const sc = await readWithSidecar(buf);
+            if (sc && (isUsable(sc) || !parsed)) {
+                reader = 'ppocrv5';
+                parsed = sc;
             }
         }
         if (!parsed) {
@@ -73,10 +74,13 @@ export async function POST(request: Request) {
 
         // Structuring layer: a small LLM decides brand/name/flavor from the OCR
         // text — the call regex can't make ("is SWING a brand or a name?").
-        // Front only; price/qty/backPanel stay with the deterministic regex.
-        // Fail-soft: if the LLM is unavailable we keep parseLabel's guesses.
+        // Only when parseLabel is NOT confident: on a clear food-pool / personal-
+        // care match the rules are more reliable than the 0.5b model, which tends
+        // to swap brand/name or hallucinate (e.g. muesli, Glow & Lovely). Skipping
+        // it there is both more accurate and faster. Front only; price/qty/back
+        // stay with the deterministic regex. Fail-soft: LLM down → keep guesses.
         let structured = false;
-        if (!parsed.backPanel) {
+        if (!parsed.backPanel && !parsed.confident) {
             const fields = await structureLabel(parsed.rawText);
             if (fields) {
                 structured = true;
@@ -93,7 +97,7 @@ export async function POST(request: Request) {
         // Audit: which reader + whether the LLM structured it, the raw text, and
         // the parsed fields — makes misreads debuggable from logs.
         console.log('[vision]', JSON.stringify({
-            reader, structured, raw: vlmText ?? parsed.rawText, name: parsed.name, brand: parsed.brand,
+            reader, structured, raw: parsed.rawText, name: parsed.name, brand: parsed.brand,
             flavor: parsed.flavor, quantity: parsed.quantity, price: parsed.price, backPanel: parsed.backPanel,
         }));
 
