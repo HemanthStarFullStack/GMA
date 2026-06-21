@@ -19,6 +19,24 @@ const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const MODEL = process.env.OLLAMA_STRUCT_MODEL || 'qwen2.5:0.5b';
 const ENABLED = process.env.LABEL_LLM_ENABLED !== 'false';
 
+// Generic product-type words the model may legitimately INFER as a name even
+// when not printed (a SWING front shows only brand+flavor, the type is "Juice").
+// Anything outside this set must be on the label, which blocks fabrications like
+// "Foggy Juice". Single words; multi-word names are checked word-by-word.
+const TYPE_WORDS = new Set([
+    'juice', 'drink', 'water', 'soda', 'milk', 'curd', 'yogurt', 'yoghurt', 'lassi',
+    'butter', 'cheese', 'paneer', 'ghee', 'cream', 'biscuit', 'biscuits', 'cookie',
+    'cookies', 'wafer', 'wafers', 'chips', 'namkeen', 'snack', 'snacks', 'chocolate',
+    'candy', 'muesli', 'oats', 'cereal', 'flakes', 'granola', 'noodles', 'pasta',
+    'rice', 'flour', 'atta', 'sugar', 'salt', 'tea', 'coffee', 'sauce', 'ketchup',
+    'jam', 'honey', 'spread', 'pickle', 'masala', 'spray', 'deodorant', 'deo',
+    'perfume', 'fragrance', 'powder', 'talc', 'talcum', 'soap', 'shampoo',
+    'conditioner', 'lotion', 'oil', 'gel', 'wash', 'scrub', 'toothpaste', 'paste',
+    'sanitizer', 'sanitiser', 'handwash', 'detergent', 'cleaner', 'freshener',
+    'bar', 'cake', 'bread', 'roll', 'spray', 'mist', 'serum', 'moisturiser',
+    'moisturizer', 'sunscreen', 'body', 'face', 'hair', 'hand',
+]);
+
 let lastProbe = { at: 0, ok: false };
 async function reachable(): Promise<boolean> {
     if (!ENABLED) return false;
@@ -73,16 +91,22 @@ export async function structureLabel(text: string): Promise<LabelFields | null> 
         const s = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
         // Anti-hallucination: brand and flavor MUST be printed on the label, so
         // drop any value whose words aren't in the OCR text (the 0.5b invents
-        // brands like "Swing" / flavors like "Olive Oil" not on the pack). NAME is
-        // exempt — the model is allowed to infer a product type ("Juice") that the
-        // label only implies.
+        // brands like "Swing" / flavors like "Olive Oil" not on the pack).
         const norm = (v: string) => ` ${v.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
         const hay = norm(text);
         const grounded = (v: string) => {
             const words = norm(v).trim().split(' ').filter((w) => w.length >= 2);
             return words.length && words.every((w) => hay.includes(w)) ? v : '';
         };
-        const fields = { brand: grounded(s(obj.brand)), name: s(obj.name), flavor: grounded(s(obj.flavor)) };
+        // NAME may infer a product TYPE the label only implies ("Juice" for a
+        // SWING front), so a name word is allowed if it's on the label OR a known
+        // generic product type. This blocks fabrication ("Foggy Juice" from
+        // "PARADISE FOGG") while keeping legitimate type inference.
+        const groundedName = (v: string) => {
+            const words = norm(v).trim().split(' ').filter((w) => w.length >= 2);
+            return words.length && words.every((w) => hay.includes(w) || TYPE_WORDS.has(w)) ? v : '';
+        };
+        const fields = { brand: grounded(s(obj.brand)), name: groundedName(s(obj.name)), flavor: grounded(s(obj.flavor)) };
         // Need at least a brand or a name to be worth using.
         return fields.brand || fields.name ? fields : null;
     } catch {
