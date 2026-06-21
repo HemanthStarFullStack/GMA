@@ -3,6 +3,7 @@
 import { Package, Calendar, Trash2, CheckCircle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useState } from "react";
+import { formatStock } from "@/lib/formatStock";
 
 interface ProductCardProps {
     item: any;
@@ -38,7 +39,7 @@ export default function ProductCard({ item, onConsume, onDelete }: ProductCardPr
                         {product.name || "Unknown Product"}
                     </h3>
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                        <span className="pill bg-olive/10 text-olive">{quantity} {unit}</span>
+                        <span className="pill bg-olive/10 text-olive">{formatStock(quantity, unit)}</span>
                         {product.flavor && <span className="pill bg-paper-2 text-ink-soft">{product.flavor}</span>}
                     </div>
                     <div className="mt-2 flex items-center text-xs text-ink-faint">

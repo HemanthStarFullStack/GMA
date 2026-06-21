@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Package, Clock, TrendingDown, Check, X, AlertTriangle, Loader2 } from "lucide-react";
 import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
+import { formatStock } from "@/lib/formatStock";
 
 interface Product {
     productId: string;
@@ -139,7 +140,7 @@ export default function AnalyticsPage() {
                                     {selected.status === "in_stock" && (
                                         <div className="mb-6 bg-paper-2/60 rounded-xl p-4 border border-line">
                                             <p className="kicker mb-1">Current stock</p>
-                                            <p className="font-display text-3xl font-semibold text-ink">{selected.currentStock} {selected.unit}</p>
+                                            <p className="font-display text-3xl font-semibold text-ink">{formatStock(selected.currentStock, selected.unit)}</p>
                                         </div>
                                     )}
 
