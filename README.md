@@ -236,7 +236,7 @@ See [`ENV_SETUP.md`](ENV_SETUP.md) for the full, documented list. Essentials:
 | `VISION_OCR_URL` | optional | PaddleOCR-VL `llama-server` (e.g. `http://host.docker.internal:8185`); empty → PP-OCRv5 only |
 | `OCR_URL` | optional | PP-OCRv5 sidecar (default `http://ocr:4000`) |
 | `OLLAMA_URL` | optional | Ollama host (default `http://host.docker.internal:11434`) |
-| `OLLAMA_STRUCT_MODEL` / `LABEL_LLM_ENABLED` | optional | Label structurer (default `qwen2.5:0.5b`) |
+| `OLLAMA_STRUCT_MODEL` / `LABEL_LLM_ENABLED` | optional | Label structurer (default `qwen2.5:1.5b`) |
 | `OLLAMA_MODEL` / `LOCAL_LLM_ENABLED` | optional | Duration-prediction LLM fallback (`llama3.2:3b`) |
 | `GEMINI_API_KEY` | optional | Primary duration/category predictor |
 | `ADMIN_SECRET` | optional | Enables `/api/admin/*`; routes 404 without it |

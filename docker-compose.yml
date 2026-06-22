@@ -30,7 +30,7 @@ services:
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
       LOCAL_LLM_ENABLED: ${LOCAL_LLM_ENABLED:-true}
       # Small LLM that structures OCR text into brand/name/flavor (label parser).
-      OLLAMA_STRUCT_MODEL: ${OLLAMA_STRUCT_MODEL:-qwen2.5:0.5b}
+      OLLAMA_STRUCT_MODEL: ${OLLAMA_STRUCT_MODEL:-qwen2.5:1.5b}
       LABEL_LLM_ENABLED: ${LABEL_LLM_ENABLED:-true}
     extra_hosts:
       # Lets the container reach the host's Ollama on Linux too.

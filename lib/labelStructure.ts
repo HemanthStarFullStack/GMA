@@ -12,11 +12,12 @@
  */
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-// 0.5b keeps the GPU roomy next to PaddleOCR-VL (~640 MB free vs ~88 MB with
-// the 1.5b) and still resolves brand/name fast. The 1.5b is slightly better at
-// inferring a product type on bare brand+flavor labels — bump this env to it if
-// you free up VRAM.
-const MODEL = process.env.OLLAMA_STRUCT_MODEL || 'qwen2.5:0.5b';
+// 1.5b (Q4_K_M, ~1.1 GB) is the proven sub-2B winner for structured JSON and
+// fits the GPU left over by PaddleOCR-VL-1.6 (~1.9 GB). Ollama auto-offloads any
+// overflow layers to CPU at load time, so it degrades to "a bit slower" rather
+// than OOM if the desktop is using the card. num_ctx is capped low (below) to
+// keep the KV cache tiny. Override via env for a different model.
+const MODEL = process.env.OLLAMA_STRUCT_MODEL || 'qwen2.5:1.5b';
 const ENABLED = process.env.LABEL_LLM_ENABLED !== 'false';
 
 // Generic product-type words the model may legitimately INFER as a name even
