@@ -30,6 +30,10 @@ services:
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
       LOCAL_LLM_ENABLED: ${LOCAL_LLM_ENABLED:-true}
       # Small LLM that structures OCR text into brand/name/flavor (label parser).
+      # Primary = Groq (free, fast, llama-3.3-70b); falls back to the local
+      # Ollama struct model below if no key / rate-limited / unreachable.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
       OLLAMA_STRUCT_MODEL: ${OLLAMA_STRUCT_MODEL:-qwen2.5:1.5b}
       LABEL_LLM_ENABLED: ${LABEL_LLM_ENABLED:-true}
     extra_hosts:

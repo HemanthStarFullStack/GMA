@@ -16,9 +16,17 @@ const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 // fits the GPU left over by PaddleOCR-VL-1.6 (~1.9 GB). Ollama auto-offloads any
 // overflow layers to CPU at load time, so it degrades to "a bit slower" rather
 // than OOM if the desktop is using the card. num_ctx is capped low (below) to
-// keep the KV cache tiny. Override via env for a different model.
+// keep the KV cache tiny. Override via env for a different model. This is the
+// LOCAL fallback; Groq (below) is primary when a key is set.
 const MODEL = process.env.OLLAMA_STRUCT_MODEL || 'qwen2.5:1.5b';
 const ENABLED = process.env.LABEL_LLM_ENABLED !== 'false';
+
+// Primary structurer: Groq (free tier, OpenAI-compatible, ~10ms on an LPU).
+// Llama-3.3-70b crushes brand/name disambiguation vs a local 1.5b and costs no
+// GPU. Free tier renews daily (no finite credit pool) so it won't permanently
+// dry up. Empty key -> skip straight to the local Ollama fallback.
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
 // Generic product-type words the model may legitimately INFER as a name even
 // when not printed (a SWING front shows only brand+flavor, the type is "Juice").
@@ -64,8 +72,39 @@ export interface LabelFields {
     flavor: string;
 }
 
-export async function structureLabel(text: string): Promise<LabelFields | null> {
-    if (!text.trim() || !(await reachable())) return null;
+const USER_MSG = (text: string) => `OCR text:\n${text}\n\nReturn the JSON.`;
+
+// Groq: OpenAI-compatible chat. Returns the raw assistant content or null.
+async function groqContent(text: string): Promise<string | null> {
+    if (!GROQ_API_KEY) return null;
+    try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_API_KEY}` },
+            body: JSON.stringify({
+                model: GROQ_MODEL,
+                response_format: { type: 'json_object' },
+                temperature: 0,
+                max_tokens: 120,
+                messages: [
+                    { role: 'system', content: SYSTEM },
+                    { role: 'user', content: USER_MSG(text) },
+                ],
+            }),
+            signal: AbortSignal.timeout(8_000),
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const raw = data?.choices?.[0]?.message?.content;
+        return typeof raw === 'string' ? raw : null;
+    } catch {
+        return null;
+    }
+}
+
+// Local Ollama fallback (only when reachable, since it's a self-hosted probe).
+async function ollamaContent(text: string): Promise<string | null> {
+    if (!(await reachable())) return null;
     try {
         const res = await fetch(`${OLLAMA_URL}/api/chat`, {
             method: 'POST',
@@ -76,7 +115,7 @@ export async function structureLabel(text: string): Promise<LabelFields | null> 
                 stream: false,
                 messages: [
                     { role: 'system', content: SYSTEM },
-                    { role: 'user', content: `OCR text:\n${text}\n\nReturn the JSON.` },
+                    { role: 'user', content: USER_MSG(text) },
                 ],
                 options: { temperature: 0, num_predict: 120, num_ctx: 2048 },
             }),
@@ -85,7 +124,17 @@ export async function structureLabel(text: string): Promise<LabelFields | null> 
         if (!res.ok) return null;
         const data = await res.json();
         const raw = data?.message?.content;
-        if (typeof raw !== 'string') return null;
+        return typeof raw === 'string' ? raw : null;
+    } catch {
+        return null;
+    }
+}
+
+export async function structureLabel(text: string): Promise<LabelFields | null> {
+    if (!text.trim() || !ENABLED) return null;
+    try {
+        const raw = (await groqContent(text)) ?? (await ollamaContent(text));
+        if (!raw) return null;
         const match = raw.match(/\{[\s\S]*\}/);
         if (!match) return null;
         const obj = JSON.parse(match[0]);
