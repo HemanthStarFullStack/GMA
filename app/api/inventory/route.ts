@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { Inventory, Product } from '@/lib/models';
+import { addToInventory } from '@/lib/inventory';
 import { auth } from '@/auth';
 
 export async function GET() {
@@ -89,34 +90,64 @@ export async function POST(request: Request) {
         }
 
         const qty = body.quantity || 1;
-        const unit = body.unit || d?.unit || 'units';
+        // Increment an existing active row or create one. Unit falls back to the
+        // product's stored defaultUnit (via addToInventory) so re-adds that send
+        // no productDetails still get the real pack size, not a bare 'units'.
+        const item = await addToInventory(session.user.id, barcode, qty, body.unit || d?.unit);
 
-        // If an active entry for this product already exists for the user,
-        // increment its quantity rather than creating a duplicate row.
-        const existing = await Inventory.findOneAndUpdate(
-            { userId: session.user.id, productId: barcode, status: 'active' },
-            { $inc: { quantity: qty } },
-            { new: true },
-        );
-
-        if (existing) {
-            return NextResponse.json({ success: true, message: 'Quantity updated', data: existing });
-        }
-
-        const newItem = await Inventory.create({
-            userId: session.user.id,
-            productId: barcode,
-            quantity: qty,
-            unit,
-            purchaseDate: new Date(),
-            status: 'active',
-            isDemo: false,
-        });
-
-        return NextResponse.json({ success: true, message: 'Item added to inventory', data: newItem });
+        return NextResponse.json({ success: true, message: 'Item added to inventory', data: item });
     } catch (error: any) {
         return NextResponse.json(
             { success: false, message: 'Failed to add item', error: error.message },
+            { status: 500 },
+        );
+    }
+}
+
+export async function PATCH(request: Request) {
+    try {
+        const session = await auth();
+        if (!session || !session.user || !session.user.id) {
+            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+        }
+
+        await connectDB();
+        const body = await request.json();
+        const id = (body.id || '').toString();
+        const delta = Number(body.delta);
+
+        if (!id) {
+            return NextResponse.json({ success: false, message: 'Item ID is required' }, { status: 400 });
+        }
+        if (!Number.isInteger(delta) || delta === 0) {
+            return NextResponse.json({ success: false, message: 'delta must be a non-zero integer' }, { status: 400 });
+        }
+
+        // Atomic adjust that can never drop below 1: the quantity guard makes a
+        // decrement to 0 match no document. The caller should "finish" (consume)
+        // the last pack instead, so we surface that as a 409 rather than deleting.
+        const updated = await Inventory.findOneAndUpdate(
+            { _id: id, userId: session.user.id, status: 'active', quantity: { $gte: 1 - delta } },
+            { $inc: { quantity: delta } },
+            { new: true },
+        );
+
+        if (!updated) {
+            // Distinguish "would go below 1" from "not found" for a clearer client path.
+            const exists = await Inventory.findOne({ _id: id, userId: session.user.id, status: 'active' }).select('_id').lean();
+            if (exists && delta < 0) {
+                return NextResponse.json(
+                    { success: false, code: 'AT_MINIMUM', message: 'Use consume to finish the last pack' },
+                    { status: 409 },
+                );
+            }
+            return NextResponse.json({ success: false, message: 'Item not found or unauthorized' }, { status: 404 });
+        }
+
+        return NextResponse.json({ success: true, message: 'Quantity updated', data: updated });
+    } catch (error: any) {
+        return NextResponse.json(
+            { success: false, message: 'Failed to update quantity', error: error.message },
             { status: 500 },
         );
     }

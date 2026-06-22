@@ -1,6 +1,6 @@
 "use client";
 
-import { Package, Calendar, Trash2, CheckCircle } from "lucide-react";
+import { Package, Calendar, Trash2, CheckCircle, Minus, Plus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useState } from "react";
 import { formatStock } from "@/lib/formatStock";
@@ -9,9 +9,11 @@ interface ProductCardProps {
     item: any;
     onConsume: (id: string) => void;
     onDelete: (id: string) => void;
+    // Adjust the pack count by ±1. Optional so existing callers keep working.
+    onAdjust?: (id: string, delta: number) => void;
 }
 
-export default function ProductCard({ item, onConsume, onDelete }: ProductCardProps) {
+export default function ProductCard({ item, onConsume, onDelete, onAdjust }: ProductCardProps) {
     const { product, quantity, unit, purchaseDate, _id } = item;
     const [imgBroken, setImgBroken] = useState(false);
 
@@ -39,7 +41,27 @@ export default function ProductCard({ item, onConsume, onDelete }: ProductCardPr
                         {product.name || "Unknown Product"}
                     </h3>
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                        <span className="pill bg-olive/10 text-olive">{formatStock(quantity, unit)}</span>
+                        {onAdjust ? (
+                            <span className="inline-flex items-center gap-1.5">
+                                <button
+                                    onClick={() => (quantity > 1 ? onAdjust(_id, -1) : onConsume(_id))}
+                                    title={quantity > 1 ? "Remove one" : "Finish last one"}
+                                    className="w-6 h-6 rounded-full border border-line-strong flex items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors"
+                                >
+                                    <Minus className="w-3.5 h-3.5" />
+                                </button>
+                                <span className="pill bg-olive/10 text-olive">{formatStock(quantity, unit)}</span>
+                                <button
+                                    onClick={() => onAdjust(_id, 1)}
+                                    title="Add one"
+                                    className="w-6 h-6 rounded-full border border-line-strong flex items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                </button>
+                            </span>
+                        ) : (
+                            <span className="pill bg-olive/10 text-olive">{formatStock(quantity, unit)}</span>
+                        )}
                         {product.flavor && <span className="pill bg-paper-2 text-ink-soft">{product.flavor}</span>}
                     </div>
                     <div className="mt-2 flex items-center text-xs text-ink-faint">

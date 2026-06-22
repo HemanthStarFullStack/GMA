@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { Camera, Package, History, Settings, BarChart3, ArrowRight } from "lucide-react";
+import { Camera, Package, History, Settings, BarChart3, ArrowRight, ShoppingCart } from "lucide-react";
 import { auth } from "@/auth";
 import UserMenu from "@/components/UserMenu";
 import HeroCard, { type HeroItem } from "@/components/HeroCard";
 import connectDB from "@/lib/mongodb";
 import { Inventory, Product, User } from "@/lib/models";
 import { depletion, type SizeSegment } from "@/lib/depletion";
+import { lowStockCount } from "@/lib/forecast";
 
 async function getHeroItems(userId: string): Promise<HeroItem[]> {
     await connectDB();
@@ -57,6 +58,7 @@ export default async function HomePage() {
 
     const heroItems = session?.user?.id ? await getHeroItems(session.user.id) : [];
     const isGuest = !session?.user;
+    const lowCount = session?.user?.id ? await lowStockCount(session.user.id) : 0;
 
     const tiles = [
         { href: "/inventory", label: "Inventory", note: "What you have",     Icon: Package,  tint: "text-olive" },
@@ -111,7 +113,30 @@ export default async function HomePage() {
                     </div>
                 </section>
 
-                <section className="pb-2">
+                <section className="pb-2 space-y-3">
+                    {/* Shopping list — doubles as the in-app restock reminder/badge. */}
+                    <Link
+                        href="/shopping"
+                        className={`pantry-card p-4 flex items-center gap-4 group hover:-translate-y-0.5 transition-transform rise ${lowCount > 0 ? "border-terracotta/40 bg-terracotta/[0.04]" : ""}`}
+                        style={{ animationDelay: "160ms" }}
+                    >
+                        <div className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${lowCount > 0 ? "bg-terracotta/15 text-terracotta" : "bg-paper-2 text-ink-soft"}`}>
+                            <ShoppingCart className="w-6 h-6" strokeWidth={1.6} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <h3 className="font-display text-lg font-semibold text-ink">Shopping list</h3>
+                            <p className="text-xs text-ink-soft">
+                                {lowCount > 0
+                                    ? `${lowCount} item${lowCount === 1 ? "" : "s"} to restock`
+                                    : "What to buy"}
+                            </p>
+                        </div>
+                        {lowCount > 0 && (
+                            <span className="pill bg-terracotta text-paper font-semibold">{lowCount}</span>
+                        )}
+                        <ArrowRight className="w-5 h-5 text-ink-faint group-hover:text-ink transition-colors flex-shrink-0" />
+                    </Link>
+
                     <div className="grid grid-cols-2 gap-3">
                         {tiles.map(({ href, label, note, Icon, tint }, i) => (
                             <Link

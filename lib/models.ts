@@ -162,8 +162,45 @@ const ConsumptionLogSchema = new Schema<IConsumptionLog>({
     },
 });
 
+// Shopping List Schema — what the user still needs to buy. Entries are either
+// auto-generated from run-out forecasts (source 'auto', tied to a barcode) or
+// typed in by hand (source 'manual', free-text name, no barcode required).
+export interface IShoppingList extends Document {
+    userId: string;
+    productId?: string; // barcode for auto/catalogue items; absent for free-text manual
+    name: string;       // denormalized display name (survives manual items & catalogue gaps)
+    reason: 'low_stock' | 'out_of_stock' | 'manual';
+    source: 'auto' | 'manual';
+    status: 'pending' | 'done' | 'dismissed';
+    boughtAt?: Date;    // set once on first "got it" → guards against double inventory add
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+const ShoppingListSchema = new Schema<IShoppingList>(
+    {
+        userId: { type: String, required: true, index: true },
+        productId: { type: String },
+        name: { type: String, required: true },
+        reason: { type: String, enum: ['low_stock', 'out_of_stock', 'manual'], required: true },
+        source: { type: String, enum: ['auto', 'manual'], required: true },
+        status: { type: String, enum: ['pending', 'done', 'dismissed'], default: 'pending' },
+        boughtAt: { type: Date },
+    },
+    { timestamps: true },
+);
+
+// One auto entry per (user, product). Partial so manual rows (no productId) and
+// non-auto rows never collide — this makes the GET auto-sync upsert race-safe
+// against React StrictMode's double-invoked effects (two concurrent GETs).
+ShoppingListSchema.index(
+    { userId: 1, productId: 1, source: 1 },
+    { unique: true, partialFilterExpression: { source: 'auto', productId: { $exists: true } } },
+);
+
 // Export models
 export const User = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
 export const Product = mongoose.models.Product || mongoose.model<IProduct>('Product', ProductSchema);
 export const Inventory = mongoose.models.Inventory || mongoose.model<IInventory>('Inventory', InventorySchema);
 export const ConsumptionLog = mongoose.models.ConsumptionLog || mongoose.model<IConsumptionLog>('ConsumptionLog', ConsumptionLogSchema);
+export const ShoppingList = mongoose.models.ShoppingList || mongoose.model<IShoppingList>('ShoppingList', ShoppingListSchema);

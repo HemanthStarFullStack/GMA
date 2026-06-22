@@ -2,17 +2,36 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, History as HistoryIcon, Loader2, Package } from "lucide-react";
+import { ArrowLeft, History as HistoryIcon, Loader2, Package, Check, RotateCcw } from "lucide-react";
 import { format } from "date-fns";
 import UserMenu from "@/components/UserMenu";
+
+type ReaddState = "idle" | "loading" | "done";
 
 export default function HistoryPage() {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [readd, setReadd] = useState<Record<string, ReaddState>>({});
 
     useEffect(() => {
         fetchHistory();
     }, []);
+
+    const buyAgain = async (logId: string, productId: string) => {
+        if (readd[logId] === "loading" || readd[logId] === "done") return;
+        setReadd((s) => ({ ...s, [logId]: "loading" }));
+        try {
+            const res = await fetch("/api/inventory", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ productId }),
+            });
+            const data = await res.json();
+            setReadd((s) => ({ ...s, [logId]: data.success ? "done" : "idle" }));
+        } catch {
+            setReadd((s) => ({ ...s, [logId]: "idle" }));
+        }
+    };
 
     const fetchHistory = async () => {
         try {
@@ -73,6 +92,20 @@ export default function HistoryPage() {
                                             <span className="pill bg-olive/10 text-olive">Lasted {log.durationDays} days</span>
                                         </div>
                                     </div>
+                                    <button
+                                        onClick={() => buyAgain(log._id, log.productId)}
+                                        disabled={readd[log._id] === "loading" || readd[log._id] === "done"}
+                                        className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${readd[log._id] === "done" ? "text-olive bg-olive/10" : "text-terracotta hover:bg-terracotta/5 disabled:opacity-50"}`}
+                                    >
+                                        {readd[log._id] === "loading" ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : readd[log._id] === "done" ? (
+                                            <Check className="w-4 h-4" />
+                                        ) : (
+                                            <RotateCcw className="w-4 h-4" />
+                                        )}
+                                        {readd[log._id] === "done" ? "Added" : "Buy again"}
+                                    </button>
                                 </div>
                             </div>
                         ))}
