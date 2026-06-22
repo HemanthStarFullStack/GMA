@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { parseLabel, type OcrItem } from '@/lib/parseLabel';
 import { readLabelText } from '@/lib/visionOcr';
-import { structureLabel } from '@/lib/labelStructure';
+import { structureLabel, GROQ_ENABLED } from '@/lib/labelStructure';
 
 /**
  * Label OCR: client posts a product photo. We read the label with the best
@@ -72,15 +72,16 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, message: 'OCR failed' }, { status: 502 });
         }
 
-        // Structuring layer: a small LLM decides brand/name/flavor from the OCR
-        // text — the call regex can't make ("is SWING a brand or a name?").
-        // Only when parseLabel is NOT confident: on a clear food-pool / personal-
-        // care match the rules are more reliable than the 0.5b model, which tends
-        // to swap brand/name or hallucinate (e.g. muesli, Glow & Lovely). Skipping
-        // it there is both more accurate and faster. Front only; price/qty/back
-        // stay with the deterministic regex. Fail-soft: LLM down → keep guesses.
+        // Structuring layer: an LLM decides brand/name/flavor from the OCR text —
+        // the call regex can't make ("is 500 EXTRA the brand or POND'S?"). With
+        // Groq (70B) as primary it runs on every front, including confident ones:
+        // the regex picks the biggest line as brand and gets promos like "500
+        // EXTRA" wrong, which the 70B fixes. The old confident-skip only applied
+        // because the weak local 0.5b/1.5b swapped brand/name — so we keep that
+        // gate only when Groq is unavailable. Front only; price/qty/back stay with
+        // the deterministic regex. Fail-soft: LLM down → keep regex guesses.
         let structured = false;
-        if (!parsed.backPanel && !parsed.confident) {
+        if (!parsed.backPanel && (GROQ_ENABLED || !parsed.confident)) {
             const fields = await structureLabel(parsed.rawText);
             if (fields) {
                 structured = true;

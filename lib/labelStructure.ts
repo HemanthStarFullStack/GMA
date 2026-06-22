@@ -28,6 +28,12 @@ const ENABLED = process.env.LABEL_LLM_ENABLED !== 'false';
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
+// True when Groq is the active primary. The caller uses this to decide whether
+// to structure even a "confident" parse: the old 0.5b/1.5b local model swapped
+// brand/name so the regex was trusted on clear matches, but the 70B doesn't, so
+// it should run everywhere. Without a key we keep the conservative gate.
+export const GROQ_ENABLED = ENABLED && !!GROQ_API_KEY;
+
 // Generic product-type words the model may legitimately INFER as a name even
 // when not printed (a SWING front shows only brand+flavor, the type is "Juice").
 // Anything outside this set must be on the label, which blocks fabrications like
