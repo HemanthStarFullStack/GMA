@@ -11,9 +11,11 @@ interface PhotoCaptureProps {
     onError?: (error: string) => void;
 }
 
-// Downscale the captured frame so uploads stay small and OCR stays fast. A
-// product label is legible well under 1600px on the long edge.
-const MAX_EDGE = 1600;
+// Downscale the captured frame so uploads stay small and OCR stays fast. The
+// VLM's prefill cost scales ~quadratically with the long edge, so 1280 reads a
+// front label's brand/name/flavor just as well while cutting ~35% of the pixels
+// (and the GPU time). The back-panel fine print uses the 1600px path in scan/page.
+const MAX_EDGE = 1280;
 
 function frameToBlob(video: HTMLVideoElement): Promise<Blob | null> {
     const vw = video.videoWidth || 1280;

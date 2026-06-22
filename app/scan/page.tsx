@@ -93,23 +93,10 @@ export default function ScanPage() {
                 setMode("manual");
                 return;
             }
-            // One text-only estimate (cached server-side per product), so the
-            // user lands on a populated form instead of the 14-day default.
-            let averageDuration = 14;
-            let category = "Other";
-            try {
-                const pr = await fetch("/api/predict", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: d.name, brand: d.brand, flavor: d.flavor, unit: d.quantity, size: d.quantity, category: "Other" }),
-                });
-                const pj = await pr.json();
-                if (pj.success) {
-                    averageDuration = pj.data.averageDuration;
-                    category = pj.data.category || "Other";
-                }
-            } catch { /* keep defaults; user can Re-estimate */ }
-
+            // Show the editable form the instant OCR returns — don't block it on
+            // the duration estimate (Gemini, up to a few seconds). The estimate
+            // fills in async via autoEstimate; until then the field shows the
+            // 14-day default with the Re-estimate spinner running.
             setForm({
                 ...emptyForm(),
                 name: d.name,
@@ -117,12 +104,11 @@ export default function ScanPage() {
                 flavor: d.flavor || "",
                 unit: d.quantity || "units",
                 price: d.price || "",
-                averageDuration,
-                category,
                 source: "ocr",
                 imageUrl,
             });
             setMode("confirm");
+            void autoEstimate(d);
         } catch {
             setToast("OCR unavailable — add the product manually.");
             setForm({ ...emptyForm(), source: "ocr", imageUrl: await uploadPromise });
@@ -141,6 +127,26 @@ export default function ScanPage() {
     // item resolves to one shared catalogue entry instead of a duplicate.
     const slugify = (s: string) =>
         s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+
+    // Background estimate right after a scan — patches only duration/category so
+    // it never clobbers a field the user started editing. Reuses `reestimating`
+    // so the Re-estimate button spins while it runs.
+    const autoEstimate = async (d: { name: string; brand?: string; flavor?: string; quantity?: string }) => {
+        setReestimating(true);
+        try {
+            const res = await fetch("/api/predict", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: d.name, brand: d.brand, flavor: d.flavor, unit: d.quantity, size: d.quantity, category: "Other" }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setForm((f) => ({ ...f, averageDuration: data.data.averageDuration, category: data.data.category || f.category }));
+            }
+        } catch { /* keep defaults; user can Re-estimate */ } finally {
+            setReestimating(false);
+        }
+    };
 
     // Re-run the AI estimate using everything the user has filled in / corrected.
     const reestimate = async () => {

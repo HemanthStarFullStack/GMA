@@ -42,6 +42,11 @@ export async function readLabelText(image: ArrayBuffer): Promise<string | null> 
                 model: 'paddleocr-vl',
                 temperature: 0,
                 stream: false,
+                // Bounds worst-case decode time: a real label (even a dense back
+                // panel) transcribes well under this; the cap only kills the rare
+                // runaway/repeat loop that otherwise burns seconds on the GPU.
+                // ponytail: 1024 is the ceiling; lower it if back panels never run long.
+                max_tokens: 1024,
                 messages: [{
                     role: 'user',
                     content: [
