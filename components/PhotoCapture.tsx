@@ -11,23 +11,36 @@ interface PhotoCaptureProps {
     onError?: (error: string) => void;
 }
 
-// Downscale the captured frame so uploads stay small and OCR stays fast. The
-// VLM's prefill cost scales ~quadratically with the long edge, so 1280 reads a
-// front label's brand/name/flavor just as well while cutting ~35% of the pixels
-// (and the GPU time). The back-panel fine print uses the 1600px path in scan/page.
-const MAX_EDGE = 1280;
+// Cap the long edge so OCR stays fast, but keep it high enough that label text
+// is sharp. A full-res phone still (12MP) downscaled to 1600 is crisp; the VLM
+// reads it well without paying for megapixels of prefill it can't use.
+const MAX_EDGE = 1600;
 
-function frameToBlob(video: HTMLVideoElement): Promise<Blob | null> {
-    const vw = video.videoWidth || 1280;
-    const vh = video.videoHeight || 720;
-    const scale = Math.min(1, MAX_EDGE / Math.max(vw, vh));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(vw * scale);
-    canvas.height = Math.round(vh * scale);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return Promise.resolve(null);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return new Promise((resolve) => canvas.toBlob((b) => resolve(b), "image/jpeg", 0.85));
+// Resize any image source to a JPEG no larger than MAX_EDGE on the long edge.
+async function srcToJpeg(src: CanvasImageSource, w: number, h: number): Promise<Blob | null> {
+    const scale = Math.min(1, MAX_EDGE / Math.max(w, h));
+    const c = document.createElement("canvas");
+    c.width = Math.round(w * scale);
+    c.height = Math.round(h * scale);
+    c.getContext("2d")?.drawImage(src, 0, 0, c.width, c.height);
+    return new Promise((res) => c.toBlob((b) => res(b), "image/jpeg", 0.9));
+}
+
+// Grab the sharpest still the device can give. ImageCapture.takePhoto() pulls a
+// FULL-resolution frame straight off the camera sensor (Chrome/Android) — far
+// sharper than the ~720p getUserMedia *video* frame, which is what made captures
+// look low-res. Falls back to a canvas grab of the video where unsupported.
+async function captureStill(video: HTMLVideoElement, stream: MediaStream | null): Promise<Blob | null> {
+    const track = stream?.getVideoTracks?.()[0];
+    try {
+        if (track && "ImageCapture" in window) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const photo: Blob = await new (window as any).ImageCapture(track).takePhoto();
+            const bmp = await createImageBitmap(photo);
+            return await srcToJpeg(bmp, bmp.width, bmp.height);
+        }
+    } catch { /* takePhoto unsupported/failed — use the video frame */ }
+    return srcToJpeg(video, video.videoWidth || 1280, video.videoHeight || 720);
 }
 
 export default function PhotoCapture({ onCapture, onManual, onError }: PhotoCaptureProps) {
@@ -44,13 +57,26 @@ export default function PhotoCapture({ onCapture, onManual, onError }: PhotoCapt
         (async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: "environment" } },
+                    // Ask for a high-res rear stream — without this browsers hand
+                    // back ~480p, which is why the preview and capture looked
+                    // blurry. The camera caps to its real max if 1080p is too high.
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                    },
                 });
                 if (cancelled) {
                     stream.getTracks().forEach((t) => t.stop());
                     return;
                 }
                 streamRef.current = stream;
+                // Best-effort continuous autofocus so close-up label text is sharp.
+                // Unsupported on many webcams/desktops — ignore if it throws.
+                try {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    await stream.getVideoTracks()[0]?.applyConstraints({ advanced: [{ focusMode: "continuous" }] } as any);
+                } catch { /* device doesn't expose focusMode */ }
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream;
                     await videoRef.current.play().catch(() => {});
@@ -75,7 +101,7 @@ export default function PhotoCapture({ onCapture, onManual, onError }: PhotoCapt
         if (!videoRef.current || capturing) return;
         setCapturing(true);
         try {
-            const blob = await frameToBlob(videoRef.current);
+            const blob = await captureStill(videoRef.current, streamRef.current);
             if (blob) onCapture(blob);
             else onError?.("Couldn't capture the photo. Try again.");
         } finally {
@@ -88,17 +114,9 @@ export default function PhotoCapture({ onCapture, onManual, onError }: PhotoCapt
         // Try createImageBitmap first (fast path). Falls back to an <img> element
         // for HEIC/HEIF on desktop Chrome, which can't decode them directly but
         // can display them via <img> → canvas → JPEG conversion.
-        const toJpeg = async (src: CanvasImageSource, w: number, h: number): Promise<Blob | null> => {
-            const scale = Math.min(1, MAX_EDGE / Math.max(w, h));
-            const c = document.createElement("canvas");
-            c.width = Math.round(w * scale);
-            c.height = Math.round(h * scale);
-            c.getContext("2d")?.drawImage(src, 0, 0, c.width, c.height);
-            return new Promise((res) => c.toBlob((b) => res(b), "image/jpeg", 0.85));
-        };
         try {
             const bmp = await createImageBitmap(file);
-            const blob = await toJpeg(bmp, bmp.width, bmp.height);
+            const blob = await srcToJpeg(bmp, bmp.width, bmp.height);
             if (blob) { onCapture(blob); return; }
         } catch { /* fall through to img-element path */ }
         // img-element path: browser can display what createImageBitmap can't decode
@@ -110,7 +128,7 @@ export default function PhotoCapture({ onCapture, onManual, onError }: PhotoCapt
                 el.onerror = rej;
                 el.src = url;
             });
-            const blob = await toJpeg(img, img.naturalWidth, img.naturalHeight);
+            const blob = await srcToJpeg(img, img.naturalWidth, img.naturalHeight);
             if (blob) { onCapture(blob); return; }
         } catch { /* nothing left to try */ } finally {
             URL.revokeObjectURL(url);
