@@ -202,7 +202,7 @@ export default function ScanPage() {
         setReadingBack(true);
         try {
             const image = await downscale(file);
-            const visRes = await fetch("/api/product-vision", { method: "POST", body: image });
+            const visRes = await fetch("/api/product-vision?side=back", { method: "POST", body: image });
             const vis = await visRes.json();
             const q = vis.data?.quantity;
             const p = vis.data?.price;

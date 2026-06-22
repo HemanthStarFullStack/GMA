@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { parseLabel, type OcrItem } from '@/lib/parseLabel';
-import { readLabelText } from '@/lib/visionOcr';
+import { readLabelText, readBackFields } from '@/lib/visionOcr';
 import { structureLabel, GROQ_ENABLED } from '@/lib/labelStructure';
 
 /**
@@ -50,6 +50,22 @@ export async function POST(request: Request) {
     }
 
     try {
+        // Back shot (?side=back): the user only wants size + price. Ask the VLM
+        // for just those two fields — tiny output, ~7s instead of transcribing
+        // the whole panel (~35s). Falls through to the full read if the targeted
+        // reader is unreachable, so it never dead-ends.
+        const side = new URL(request.url).searchParams.get('side');
+        if (side === 'back') {
+            const fields = await readBackFields(buf);
+            if (fields) {
+                console.log('[vision:back]', JSON.stringify(fields));
+                return NextResponse.json({
+                    success: !!(fields.quantity || fields.price),
+                    data: { name: '', brand: '', flavor: '', quantity: fields.quantity, price: fields.price, rawText: '', backPanel: true, confident: false },
+                });
+            }
+        }
+
         // Whether a parse is good enough to ship: a front shot needs a name; a
         // back/nutrition panel just needs the net quantity.
         const isUsable = (p: ReturnType<typeof parseLabel> | null) =>
