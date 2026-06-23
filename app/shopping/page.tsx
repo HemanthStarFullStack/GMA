@@ -108,7 +108,7 @@ export default function ShoppingPage() {
                         <ArrowLeft className="w-5 h-5" />
                         <span className="font-medium">Back</span>
                     </Link>
-                    <h1 className="font-display text-2xl font-semibold text-ink flex items-center gap-2">
+                    <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink flex items-center gap-2">
                         <ShoppingCart className="w-5 h-5 text-terracotta" />
                         Shopping
                     </h1>

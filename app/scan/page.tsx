@@ -307,7 +307,7 @@ export default function ScanPage() {
                         <ArrowLeft className="w-5 h-5" />
                         <span className="font-medium">Back</span>
                     </Link>
-                    <h1 className="font-display text-2xl font-semibold text-ink">Add a product</h1>
+                    <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">Add a product</h1>
                     <UserMenu />
                 </div>
             </header>
@@ -413,7 +413,7 @@ export default function ScanPage() {
                             <Field label="Product name *">
                                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Toned Milk" className={inputCls} />
                             </Field>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3">
                                 <Field label="Brand">
                                     <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="e.g. Amul" className={inputCls} />
                                 </Field>
@@ -421,7 +421,7 @@ export default function ScanPage() {
                                     <input value={form.flavor} onChange={(e) => setForm({ ...form, flavor: e.target.value })} placeholder="e.g. Aqua, Mango" className={inputCls} />
                                 </Field>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3">
                                 <Field label="Size / weight">
                                     <input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="e.g. 1 L, 150 ml, 500 g" className={inputCls} />
                                 </Field>
@@ -429,7 +429,7 @@ export default function ScanPage() {
                                     <input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="e.g. ₹199" className={inputCls} />
                                 </Field>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3">
                                 <Field label="Category">
                                     <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className={inputCls}>
                                         {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
@@ -450,8 +450,8 @@ export default function ScanPage() {
 
                             {/* Duration — the predicted "time taken to consume", editable + re-estimable */}
                             <Field label="Typically lasts">
-                                <div className="flex items-center gap-2">
-                                    <div className="flex items-center gap-2 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-1 min-w-[130px]">
                                         <input
                                             type="number"
                                             min={1}
@@ -466,7 +466,7 @@ export default function ScanPage() {
                                         onClick={reestimate}
                                         disabled={reestimating}
                                         title="Re-estimate from the details above"
-                                        className="btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm whitespace-nowrap disabled:opacity-50"
+                                        className="btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm whitespace-nowrap shrink-0 disabled:opacity-50"
                                     >
                                         {reestimating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                                         Re-estimate

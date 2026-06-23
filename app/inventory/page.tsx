@@ -211,12 +211,12 @@ export default function InventoryPage() {
                         <ArrowLeft className="w-5 h-5" />
                         <span className="font-medium">Back</span>
                     </Link>
-                    <h1 className="font-display text-2xl font-semibold text-ink">Inventory</h1>
-                    <div className="flex items-center gap-3">
-                        <Link href="/shopping" title="Shopping list" className="w-10 h-10 rounded-full border border-line-strong flex items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors">
+                    <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">Inventory</h1>
+                    <div className="flex items-center gap-2 sm:gap-3">
+                        <Link href="/shopping" title="Shopping list" className="hidden sm:flex w-10 h-10 rounded-full border border-line-strong items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors">
                             <ShoppingCart className="w-5 h-5" />
                         </Link>
-                        <Link id="tour-analytics" href="/analytics" title="Analytics" className="w-10 h-10 rounded-full border border-line-strong flex items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors">
+                        <Link id="tour-analytics" href="/analytics" title="Analytics" className="hidden sm:flex w-10 h-10 rounded-full border border-line-strong items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors">
                             <BarChart3 className="w-5 h-5" />
                         </Link>
                         <Link id="tour-scan" href="/scan" className="btn-primary w-10 h-10 flex items-center justify-center shadow-lg">

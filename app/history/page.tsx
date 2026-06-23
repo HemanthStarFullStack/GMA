@@ -53,7 +53,7 @@ export default function HistoryPage() {
                         <ArrowLeft className="w-5 h-5" />
                         <span className="font-medium">Back</span>
                     </Link>
-                    <h1 className="font-display text-2xl font-semibold text-ink">History</h1>
+                    <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">History</h1>
                     <UserMenu />
                 </div>
             </header>
@@ -73,8 +73,8 @@ export default function HistoryPage() {
                     <div className="space-y-3">
                         {logs.map((log: any, i: number) => (
                             <div key={log._id} className="pantry-card overflow-hidden rise" style={{ animationDelay: `${i * 40}ms` }}>
-                                <div className="flex gap-4 p-4 items-center">
-                                    <div className="w-16 h-16 rounded-xl bg-paper-2 border border-line flex items-center justify-center overflow-hidden flex-shrink-0">
+                                <div className="flex gap-3 p-4 items-center">
+                                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-paper-2 border border-line flex items-center justify-center overflow-hidden flex-shrink-0">
                                         {log.productDetails?.imageUrl ? (
                                             // eslint-disable-next-line @next/next/no-img-element
                                             <img src={log.productDetails.imageUrl} alt={log.productDetails.name} className="w-full h-full object-cover" />

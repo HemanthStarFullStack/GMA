@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Package, Clock, TrendingDown, Check, X, AlertTriangle, Loader2 } from "lucide-react";
+import { ArrowLeft, Package, Clock, TrendingDown, Check, X, AlertTriangle, Loader2, ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
 import { formatStock } from "@/lib/formatStock";
@@ -60,7 +60,7 @@ export default function AnalyticsPage() {
                         <ArrowLeft className="w-5 h-5" />
                         <span className="font-medium">Back</span>
                     </Link>
-                    <h1 className="font-display text-2xl font-semibold text-ink">Analytics</h1>
+                    <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">Analytics</h1>
                     <UserMenu />
                 </div>
             </header>
@@ -75,12 +75,12 @@ export default function AnalyticsPage() {
                         <p className="text-ink-soft">Scan products and mark them consumed to build forecasts.</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* List */}
-                        <div className="lg:col-span-1">
-                            <div className="pantry-card p-4 sticky top-24">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* List — hidden on mobile when a product is selected */}
+                        <div className={`md:col-span-1 ${selected ? "hidden md:block" : ""}`}>
+                            <div className="pantry-card p-4 md:sticky md:top-24">
                                 <p className="kicker mb-3">All products · {products.length}</p>
-                                <div className="space-y-1.5 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
+                                <div className="space-y-1.5 max-h-[50vh] md:max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
                                     {products.map((p) => (
                                         <button
                                             key={p.productId}
@@ -112,9 +112,17 @@ export default function AnalyticsPage() {
                             </div>
                         </div>
 
-                        {/* Detail */}
+                        {/* Detail — full width on mobile, 2 cols on md+ */}
                         {selected && (
-                            <div className="lg:col-span-2 rise">
+                            <div className="md:col-span-2 rise">
+                                {/* Mobile back-to-list */}
+                                <button
+                                    className="md:hidden mb-4 flex items-center gap-2 text-sm font-medium text-ink-soft hover:text-ink"
+                                    onClick={() => setSelected(null)}
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                    All products
+                                </button>
                                 <div className="pantry-card p-6">
                                     <div className="flex items-start gap-5 mb-6">
                                         <div className="w-24 h-24 rounded-2xl bg-paper-2 border border-line flex items-center justify-center overflow-hidden flex-shrink-0">

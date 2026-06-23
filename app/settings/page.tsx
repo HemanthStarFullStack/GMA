@@ -63,7 +63,7 @@ export default function SettingsPage() {
                         <ArrowLeft className="w-5 h-5" />
                         <span className="font-medium">Back</span>
                     </Link>
-                    <h1 className="font-display text-2xl font-semibold text-ink">Settings</h1>
+                    <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">Settings</h1>
                     <div className="w-10" />
                 </div>
             </header>

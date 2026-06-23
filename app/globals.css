@@ -47,6 +47,9 @@
 }
 
 @layer base {
+  /* Cap content width so wide monitors don't stretch layouts edge-to-edge */
+  .container { max-width: min(100%, 80rem); }
+
   body {
     background-color: #fdf6ee;
     color: #2b2118;
