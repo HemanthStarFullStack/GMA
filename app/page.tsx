@@ -71,7 +71,8 @@ export default async function HomePage() {
         <div className="min-h-dvh flex flex-col">
             <header className="container mx-auto px-5 py-4 flex items-center justify-between shrink-0">
                 <div className="flex items-baseline gap-2">
-                    <span className="font-display text-2xl font-semibold text-ink tracking-tight">GMA</span>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/logo.png" alt="GMA" className="h-7 w-auto" />
                     <span className="hidden sm:inline text-xs text-ink-faint">· grocery management</span>
                 </div>
                 {session ? (

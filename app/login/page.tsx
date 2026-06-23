@@ -17,7 +17,8 @@ export default function LoginPage() {
             <div className="flex-1 flex items-center justify-center px-5 pb-20">
                 <div className="w-full max-w-md rise">
                     <div className="text-center mb-8">
-                        <span className="font-display text-3xl font-semibold text-ink">GMA</span>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src="/logo.png" alt="GMA" className="h-10 w-auto mx-auto" />
                         <p className="kicker mt-3">Grocery management</p>
                     </div>
 
