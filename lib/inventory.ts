@@ -18,12 +18,22 @@ export async function addToInventory(
     qty = 1,
     unitOverride?: string,
 ) {
-    const existing = await Inventory.findOneAndUpdate(
-        { userId, productId: barcode, status: 'active' },
-        { $inc: { quantity: qty } },
-        { new: true },
-    );
-    if (existing) return existing;
+    // ponytail: read-modify-write, not atomic $inc, because topping up must also
+    // age the purchaseDate. A bare $inc left the date stale, so fresh units read
+    // as old and the forecast warned to restock too early. Blend the lot's date
+    // toward now, weighted by how many units are new vs. already there.
+    // Ceiling: not race-safe against two concurrent adds of the same barcode
+    // (rare: one user tapping). Switch to a transaction if that ever matters.
+    const existing = await Inventory.findOne({ userId, productId: barcode, status: 'active' });
+    if (existing) {
+        const oldQty = existing.quantity;
+        const oldT = new Date(existing.purchaseDate).getTime();
+        const now = Date.now();
+        existing.purchaseDate = new Date(Math.round((oldT * oldQty + now * qty) / (oldQty + qty)));
+        existing.quantity = oldQty + qty;
+        await existing.save();
+        return existing;
+    }
 
     let unit = unitOverride;
     if (!unit) {
