@@ -25,7 +25,6 @@ export interface ProductForecast {
     purchaseDate: Date | null;
     rows?: { purchaseDate: Date; qty: number }[];
     consumptionHistory: {
-        totalConsumed: number;
         timesConsumed: number;
         averageDurationDays: number;
         lastConsumed: string | null;
@@ -83,7 +82,7 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
                 currentStock: 0,
                 purchaseDate: item.purchaseDate,
                 rows: [],
-                consumptionHistory: { totalConsumed: 0, timesConsumed: 0, averageDurationDays: 0, lastConsumed: null },
+                consumptionHistory: { timesConsumed: 0, averageDurationDays: 0, lastConsumed: null },
                 predictions: null,
             });
         }
@@ -104,12 +103,11 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
                 status: 'out_of_stock',
                 currentStock: 0,
                 purchaseDate: null,
-                consumptionHistory: { totalConsumed: 0, timesConsumed: 0, averageDurationDays: 0, lastConsumed: null },
+                consumptionHistory: { timesConsumed: 0, averageDurationDays: 0, lastConsumed: null },
                 predictions: null,
             });
         }
         const product = map.get(id);
-        product.consumptionHistory.totalConsumed += 1;
         product.consumptionHistory.timesConsumed += 1;
         product.consumptionHistory.averageDurationDays += log.durationDays || 0;
         const logDate = new Date(log.consumedDate);

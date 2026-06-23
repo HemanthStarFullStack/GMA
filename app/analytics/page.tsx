@@ -17,7 +17,6 @@ interface Product {
     unit: string;
     purchaseDate: string | null;
     consumptionHistory: {
-        totalConsumed: number;
         timesConsumed: number;
         averageDurationDays: number;
         lastConsumed: string | null;
@@ -156,10 +155,9 @@ export default function AnalyticsPage() {
                                         <div className="mb-6">
                                             <p className="kicker mb-3">Consumption history</p>
                                             <div className="grid grid-cols-2 gap-3">
-                                                <Stat label="Times used" value={`${selected.consumptionHistory.timesConsumed}`} />
-                                                <Stat label="Avg duration" value={`${selected.consumptionHistory.averageDurationDays} days`} />
-                                                <Stat label="Total consumed" value={`${selected.consumptionHistory.totalConsumed}`} />
-                                                <Stat label="Last used" value={selected.consumptionHistory.lastConsumed ? new Date(selected.consumptionHistory.lastConsumed).toLocaleDateString() : "—"} />
+                                                <Stat label="Times finished" value={`${selected.consumptionHistory.timesConsumed}`} />
+                                                <Stat label="Avg pack life" value={`${selected.consumptionHistory.averageDurationDays} days`} />
+                                                <Stat label="Last finished" value={selected.consumptionHistory.lastConsumed ? new Date(selected.consumptionHistory.lastConsumed).toLocaleDateString() : "—"} />
                                             </div>
                                         </div>
                                     )}
