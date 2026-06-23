@@ -68,7 +68,7 @@ export default async function HomePage() {
     ];
 
     return (
-        <div className="min-h-dvh flex flex-col lg:h-dvh lg:overflow-hidden">
+        <div className="min-h-dvh flex flex-col">
             <header className="container mx-auto px-5 py-4 flex items-center justify-between shrink-0">
                 <div className="flex items-baseline gap-2">
                     <span className="font-display text-2xl font-semibold text-ink tracking-tight">GMA</span>
@@ -81,7 +81,7 @@ export default async function HomePage() {
                 )}
             </header>
 
-            <main className="flex-1 container mx-auto px-5 flex flex-col py-6 gap-8 lg:gap-0 lg:justify-between lg:py-4 lg:overflow-hidden">
+            <main className="flex-1 container mx-auto px-5 flex flex-col py-6 gap-8 lg:gap-12 lg:py-10">
                 <section className="grid lg:grid-cols-12 gap-6 items-start lg:items-center lg:flex-1">
                     <div className="lg:col-span-7 rise">
                         <p className="kicker mb-2">Know your kitchen</p>
