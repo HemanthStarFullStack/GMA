@@ -60,10 +60,12 @@ export default function GmaTour() {
                     if (runId.current !== id) return;
                     const json = await res.json();
                     if (!json?.success || json?.data?.tourCompleted) return;
-                    // Seed demo data async — ready long before the tour reaches /inventory
-                    fetch("/api/demo", { method: "POST" }).catch(() => {});
                     setPhase(userId, "home");
                     phase = "home";
+                    // Seed demo data and WAIT for it — the tour is the sole seeder, so
+                    // once this resolves every product page has data to highlight.
+                    await fetch("/api/demo", { method: "POST" }).catch(() => {});
+                    if (runId.current !== id) return;
                     // Landed on inventory first → bounce to home to start the tour there
                     if (pathname !== "/") { router.push("/"); return; }
                 } catch { return; }
@@ -73,11 +75,33 @@ export default function GmaTour() {
             if (PHASE_PATHS[phase] !== pathname) return;
             if (runId.current !== id) return;
 
-            // Wait for DOM to settle after page transition
-            await new Promise(r => setTimeout(r, 900));
+            // Product pages fetch their data on mount — wait for the actual item to
+            // render (up to 4s) before building steps, so the per-page item highlight
+            // isn't skipped just because the fetch hadn't resolved yet.
+            const READY: Partial<Record<TourPhase, string>> = {
+                inventory: "#tour-grid .pantry-card",
+                shopping: "[data-tour='shop-list'] .pantry-card",
+                analytics: "[data-tour='analytics-list'] button",
+                history: "[data-tour='history-items'] .pantry-card",
+                settings: "[data-tour='settings-family']",
+            };
+            await new Promise(r => setTimeout(r, 400));
             if (runId.current !== id) return;
+            const wantSel = READY[phase];
+            if (wantSel) {
+                const start = Date.now();
+                while (Date.now() - start < 4000 && !document.querySelector(wantSel)) {
+                    await new Promise(r => setTimeout(r, 150));
+                    if (runId.current !== id) return;
+                }
+            }
 
             const has = (sel: string) => !!document.querySelector(sel);
+            // Visible = present AND not display:none (offsetParent is null when hidden).
+            const visible = (sel: string) => {
+                const el = document.querySelector(sel) as HTMLElement | null;
+                return !!el && !!el.offsetParent;
+            };
             const p: TourPhase = phase; // capture for closures
 
             const end = (skip: boolean) => {
@@ -99,6 +123,7 @@ export default function GmaTour() {
                 ],
                 inventory: [
                     ...(has("#tour-grid") ? [{ element: "#tour-grid", popover: { title: "Your pantry shelves", description: "Products grouped by category — Staples, Fresh, Snacks, and more. These are sample products." } }] : []),
+                    ...(has("#tour-grid .pantry-card") ? [{ element: "#tour-grid .pantry-card", popover: { title: "A sample product", description: "Each card shows the brand, size, and how long ago you added it. We've loaded a few so you can explore." } }] : []),
                     ...(has('[data-tour="adjust"]') ? [{ element: '[data-tour="adjust"]', popover: { title: "Adjust pack count", description: "Got a new pack? Hit +. Used one? Hit −. The last − triggers the consume flow." } }] : []),
                     ...(has('[data-tour="consume"]') ? [{ element: '[data-tour="consume"]', popover: { title: "Mark consumed", description: "GMA learns how fast your household uses each product — this is how forecasts get accurate." } }] : []),
                     ...(has('[data-tour="search"]') ? [{ element: '[data-tour="search"]', popover: { title: "Search & filter", description: "Search by name or brand, sort by quantity, or filter to one shelf section." } }] : []),
@@ -106,16 +131,17 @@ export default function GmaTour() {
                 ],
                 shopping: [
                     { popover: { title: "Shopping list", description: "Atta and Tea ran out — GMA added them automatically. The list stays in sync as you buy and use things." } },
+                    ...(has('[data-tour="shop-list"] .pantry-card') ? [{ element: '[data-tour="shop-list"] .pantry-card', popover: { title: "An item to buy", description: "Tick the circle once you've bought it — GMA adds it straight back to your inventory." } }] : []),
                     ...(has('[data-tour="shop-add"]') ? [{ element: '[data-tour="shop-add"]', popover: { title: "Add anything manually", description: "Need something GMA doesn't track yet? Type it here and check it off at the store." } }] : []),
                     { popover: { title: "Next: Analytics →", description: "Let's see your run-out forecasts." } },
                 ],
                 analytics: [
-                    ...(has('[data-tour="analytics-list"]') ? [{ element: '[data-tour="analytics-list"]', popover: { title: "All products", description: "Every product you've tracked with its consumption history. Select one to see its forecast." } }] : []),
+                    ...(visible('[data-tour="analytics-list"] button') ? [{ element: '[data-tour="analytics-list"] button', popover: { title: "A tracked product", description: "Every product you've used shows here. Tap one to open its forecast." } }] : []),
                     ...(has('[data-tour="analytics-detail"]') ? [{ element: '[data-tour="analytics-detail"]', popover: { title: "Run-out forecast", description: "Consumption rate, days until empty, and estimated restock date — based on your actual usage." } }] : []),
                     { popover: { title: "Next: History →", description: "Let's see your consumption log." } },
                 ],
                 history: [
-                    ...(has('[data-tour="history-items"]') ? [{ element: '[data-tour="history-items"]', popover: { title: "Consumption log", description: "Every pack you've finished, with how long it lasted. This is what builds your forecasts." } }] : []),
+                    ...(has('[data-tour="history-items"] .pantry-card') ? [{ element: '[data-tour="history-items"] .pantry-card', popover: { title: "A consumed item", description: "Each entry is a pack you finished and how long it lasted — this is what trains your forecasts." } }] : []),
                     ...(has('[data-tour="buy-again"]') ? [{ element: '[data-tour="buy-again"]', popover: { title: "Buy again", description: "Bought something again? One tap re-adds to inventory — no re-scanning needed." } }] : []),
                     { popover: { title: "Last stop: Settings →", description: "One setting that makes every forecast more accurate." } },
                 ],

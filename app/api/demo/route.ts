@@ -70,7 +70,9 @@ export async function POST() {
             return NextResponse.json({ success: true, seeded: false, message: 'Demo already seeded' });
         }
 
-        for (const d of DEMO) {
+        // Seed every product's catalogue entry, consumption logs, and stock in
+        // parallel so the tour can await this and have data ready fast.
+        await Promise.all(DEMO.map(async (d) => {
             const barcode = `DEMO-${uid}-${d.key}`;
 
             await Product.findOneAndUpdate(
@@ -94,9 +96,9 @@ export async function POST() {
 
             // Past consumption logs -> gives each product a learned rate/history.
             let cursor = Date.now() - 5 * DAY;
-            for (const dur of d.logs) {
+            const logDocs = d.logs.map((dur) => {
                 cursor -= dur * DAY;
-                await ConsumptionLog.create({
+                return {
                     userId: uid,
                     productId: barcode,
                     inventoryId: 'demo',
@@ -105,8 +107,9 @@ export async function POST() {
                     surveyCompleted: true,
                     isDemo: true,
                     surveyData: { userReportedDays: dur, familySize: user?.familySize || 4, flagged: false, notes: '' },
-                });
-            }
+                };
+            });
+            await ConsumptionLog.insertMany(logDocs);
 
             // Current stock -> enables run-out predictions for in-stock items.
             if (d.inStock) {
@@ -120,7 +123,7 @@ export async function POST() {
                     isDemo: true,
                 });
             }
-        }
+        }));
 
         return NextResponse.json({ success: true, seeded: true, count: DEMO.length });
     } catch (error: any) {

@@ -60,12 +60,9 @@ export default function InventoryPage() {
 
     useEffect(() => {
         (async () => {
-            // First-login onboarding: server-guarded, so this is a no-op after the first time.
-            try {
-                await fetch("/api/demo", { method: "POST" });
-            } catch {
-                /* non-fatal */
-            }
+            // Demo seeding is owned solely by the tour (GmaTour) so there's no race
+            // between two concurrent /api/demo POSTs leaving the page fetching an
+            // empty inventory before the seed finishes writing.
             await fetchInventory();
             try {
                 const data = await (await fetch("/api/user")).json();

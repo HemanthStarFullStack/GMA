@@ -149,7 +149,7 @@ export default function ShoppingPage() {
                     </div>
                 ) : (
                     <>
-                        <div className="space-y-2.5">
+                        <div data-tour="shop-list" className="space-y-2.5">
                             {pending.map((item) => {
                                 const r = REASON[item.reason] ?? REASON.manual;
                                 const isBusy = busy.has(item._id);
