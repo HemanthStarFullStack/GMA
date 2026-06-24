@@ -48,17 +48,19 @@ export default function GmaTour() {
         const run = async () => {
             let phase = getPhase();
 
-            // Home page: detect first-time user via API (once per browser)
-            if (!phase && !isTourDone() && pathname === "/") {
+            // Detect first-time user (triggers on / or /inventory — whichever they land on first)
+            if (!phase && !isTourDone() && (pathname === "/" || pathname === "/inventory")) {
                 try {
                     const res = await fetch("/api/user");
                     if (runId.current !== id) return;
                     const json = await res.json();
                     if (json?.data?.tourCompleted) { markTourDone(); return; }
-                    // Seed demo data async — will be ready before user reaches /inventory
+                    // Seed demo data async — will be ready long before user reaches /inventory in tour
                     fetch("/api/demo", { method: "POST" }).catch(() => {});
                     setPhase("home");
                     phase = "home";
+                    // If we landed on inventory first, bounce to home to start the tour there
+                    if (pathname !== "/") { router.push("/"); return; }
                 } catch { return; }
             }
 
