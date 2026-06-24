@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
-import { Product, Inventory, ConsumptionLog, User } from '@/lib/models';
+import { Product, Inventory, ConsumptionLog, ShoppingList, User } from '@/lib/models';
 import { auth } from '@/auth';
 
 /**
@@ -140,14 +140,22 @@ export async function DELETE() {
 
         await connectDB();
         const uid = session.user.id;
+        const demoBarcode = new RegExp(`^DEMO-${uid}-`);
 
-        const inv = await Inventory.deleteMany({ userId: uid, isDemo: true });
-        const logs = await ConsumptionLog.deleteMany({ userId: uid, isDemo: true });
-        const prods = await Product.deleteMany({ isDemo: true, barcode: new RegExp(`^DEMO-${uid}-`) });
+        // Match by isDemo flag OR the demo barcode pattern. The barcode catch is
+        // essential: shopping-list "got it" on a demo item runs addToInventory,
+        // which creates a NON-demo inventory row for the demo barcode — that row
+        // would otherwise survive as an orphaned "Unknown Product". Shopping-list
+        // entries (auto-synced from demo low stock) aren't isDemo-tagged either,
+        // so clean them by barcode too. Manual list items (no productId) are kept.
+        const inv = await Inventory.deleteMany({ userId: uid, $or: [{ isDemo: true }, { productId: demoBarcode }] });
+        const logs = await ConsumptionLog.deleteMany({ userId: uid, $or: [{ isDemo: true }, { productId: demoBarcode }] });
+        const shop = await ShoppingList.deleteMany({ userId: uid, productId: demoBarcode });
+        const prods = await Product.deleteMany({ barcode: demoBarcode });
 
         return NextResponse.json({
             success: true,
-            removed: { inventory: inv.deletedCount, logs: logs.deletedCount, products: prods.deletedCount },
+            removed: { inventory: inv.deletedCount, logs: logs.deletedCount, shopping: shop.deletedCount, products: prods.deletedCount },
         });
     } catch (error: any) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
