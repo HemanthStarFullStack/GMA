@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Loader2, BarChart3, ShoppingCart, Search } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
 import ProductSurvey from "@/components/ProductSurvey";
 import UserMenu from "@/components/UserMenu";
-import Tour from "@/components/Tour";
 
 interface InventoryItem {
     _id: string;
@@ -55,7 +54,6 @@ export default function InventoryPage() {
     const [familySize, setFamilySize] = useState(1);
     const [surveyOpen, setSurveyOpen] = useState(false);
     const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
-    const [runTour, setRunTour] = useState(false);
     const [query, setQuery] = useState("");
     const [sortBy, setSortBy] = useState<SortBy>("recent");
     const [section, setSection] = useState<string>("all");
@@ -71,31 +69,12 @@ export default function InventoryPage() {
             await fetchInventory();
             try {
                 const data = await (await fetch("/api/user")).json();
-                if (data.success) {
-                    setFamilySize(data.data.familySize ?? 1);
-                    if (!data.data.tourCompleted) setRunTour(true);
-                }
+                if (data.success) setFamilySize(data.data.familySize ?? 1);
             } catch {
                 /* keep defaults */
             }
             setLoading(false);
         })();
-    }, []);
-
-    // When the tour ends (finished or skipped): clear demo data, mark done, refresh to the empty account.
-    const finishTour = useCallback(async () => {
-        setRunTour(false);
-        try {
-            await fetch("/api/user", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tourCompleted: true }),
-            });
-            await fetch("/api/demo", { method: "DELETE" });
-        } catch {
-            /* non-fatal */
-        }
-        fetchInventory();
     }, []);
 
     const fetchInventory = async () => {
@@ -311,8 +290,6 @@ export default function InventoryPage() {
                     </>
                 )}
             </main>
-
-            <Tour run={runTour} onFinish={finishTour} />
 
             {selectedItem && (
                 <ProductSurvey

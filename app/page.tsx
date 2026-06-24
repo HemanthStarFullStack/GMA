@@ -83,7 +83,7 @@ export default async function HomePage() {
             </header>
 
             <main className="flex-1 container mx-auto px-5 flex flex-col py-6 gap-8 lg:gap-12 lg:py-10">
-                <section className="grid lg:grid-cols-12 gap-6 items-start lg:items-center lg:flex-1">
+                <section data-tour="hero" className="grid lg:grid-cols-12 gap-6 items-start lg:items-center lg:flex-1">
                     <div className="lg:col-span-7 rise">
                         <p className="kicker mb-2">Know your kitchen</p>
                         <h1 className="font-display text-ink text-4xl sm:text-5xl lg:text-6xl font-semibold leading-[0.98]">
@@ -118,6 +118,7 @@ export default async function HomePage() {
                     {/* Shopping list — doubles as the in-app restock reminder/badge. */}
                     <Link
                         href="/shopping"
+                        data-tour="home-shopping"
                         className={`pantry-card p-4 flex items-center gap-4 group hover:-translate-y-0.5 transition-transform rise ${lowCount > 0 ? "border-terracotta/40 bg-terracotta/[0.04]" : ""}`}
                         style={{ animationDelay: "160ms" }}
                     >
@@ -138,7 +139,7 @@ export default async function HomePage() {
                         <ArrowRight className="w-5 h-5 text-ink-faint group-hover:text-ink transition-colors flex-shrink-0" />
                     </Link>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div data-tour="home-tiles" className="grid grid-cols-2 gap-3">
                         {tiles.map(({ href, label, note, Icon, tint }, i) => (
                             <Link
                                 key={href}

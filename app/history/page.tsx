@@ -70,7 +70,7 @@ export default function HistoryPage() {
                         <p className="text-ink-soft">Items you mark as consumed will appear here.</p>
                     </div>
                 ) : (
-                    <div className="space-y-3">
+                    <div data-tour="history-items" className="space-y-3">
                         {logs.map((log: any, i: number) => (
                             <div key={log._id} className="pantry-card overflow-hidden rise" style={{ animationDelay: `${i * 40}ms` }}>
                                 <div className="flex gap-3 p-4 items-center">
@@ -93,6 +93,7 @@ export default function HistoryPage() {
                                         </div>
                                     </div>
                                     <button
+                                        data-tour="buy-again"
                                         onClick={() => buyAgain(log._id, log.productId)}
                                         disabled={readd[log._id] === "loading" || readd[log._id] === "done"}
                                         className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${readd[log._id] === "done" ? "text-olive bg-olive/10" : "text-terracotta hover:bg-terracotta/5 disabled:opacity-50"}`}

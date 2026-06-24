@@ -74,7 +74,7 @@ export default function SettingsPage() {
                 ) : (
                     <>
                         {/* Household */}
-                        <section className="pantry-card overflow-hidden rise">
+                        <section data-tour="settings-family" className="pantry-card overflow-hidden rise">
                             <div className="p-6">
                                 <div className="flex items-center gap-3 mb-6">
                                     <div className="w-10 h-10 bg-olive/10 rounded-full flex items-center justify-center">

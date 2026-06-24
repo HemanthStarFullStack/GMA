@@ -118,7 +118,7 @@ export default function ShoppingPage() {
 
             <main className="container mx-auto px-5 py-8 max-w-2xl">
                 {/* Add item */}
-                <div className="flex gap-2 mb-6">
+                <div data-tour="shop-add" className="flex gap-2 mb-6">
                     <input
                         value={name}
                         onChange={(e) => setName(e.target.value)}

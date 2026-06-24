@@ -77,7 +77,7 @@ export default function AnalyticsPage() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* List — hidden on mobile when a product is selected */}
                         <div className={`md:col-span-1 ${selected ? "hidden md:block" : ""}`}>
-                            <div className="pantry-card p-4 md:sticky md:top-24">
+                            <div data-tour="analytics-list" className="pantry-card p-4 md:sticky md:top-24">
                                 <p className="kicker mb-3">All products · {products.length}</p>
                                 <div className="space-y-1.5 max-h-[50vh] md:max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
                                     {products.map((p) => (
@@ -113,7 +113,7 @@ export default function AnalyticsPage() {
 
                         {/* Detail — full width on mobile, 2 cols on md+ */}
                         {selected && (
-                            <div className="md:col-span-2 rise">
+                            <div data-tour="analytics-detail" className="md:col-span-2 rise">
                                 {/* Mobile back-to-list */}
                                 <button
                                     className="md:hidden mb-4 flex items-center gap-2 text-sm font-medium text-ink-soft hover:text-ink"
