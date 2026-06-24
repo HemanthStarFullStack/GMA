@@ -251,9 +251,8 @@ in production.
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/product-vision` | POST | Read a label photo → `{brand, name, flavor, quantity, price}` |
-| `/api/barcode?barcode=` | GET | Resolve by barcode (cache → open DBs → manual) |
 | `/api/predict` | POST | Duration + category for the confirm form |
-| `/api/inventory` | GET/POST/DELETE | List / add (de-dupes) / remove items |
+| `/api/inventory` | GET/POST/DELETE/PATCH | List / add (de-dupes) / remove / adjust qty |
 | `/api/analytics` | GET | Time-weighted run-out forecasts |
 | `/api/history` | GET/POST | Consumption logs and surveys |
 | `/api/user` | GET/PUT | Household settings (family size, survey pref, tour) |
