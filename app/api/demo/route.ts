@@ -28,17 +28,17 @@ type DemoDef = {
     imageUrl: string;
 };
 
-const BASE = 'https://images.unsplash.com';
-const img = (id: string) => `${BASE}/${id}?w=400&h=400&fit=crop&auto=format&q=80`;
+// Real brand packshots from Open Food Facts (CC-licensed). Verified HTTP 200.
+const OFF = 'https://images.openfoodfacts.org/images/products';
 
 const DEMO: DemoDef[] = [
-    { key: 'MILK',    name: 'Toned Milk (1L)',          brand: 'Amul',       category: 'Dairy & Eggs', unit: 'packet', avg: 3,  inStock: true,  logs: [3, 2, 4],   imageUrl: img('photo-1550583724-b2692b85b150') },
-    { key: 'BISCUIT', name: 'Marie Gold (250g)',         brand: 'Britannia',  category: 'Snacks',       unit: 'pack',   avg: 6,  inStock: true,  logs: [6, 7, 5],   imageUrl: img('photo-1558961363-fa8fdf82db35') },
-    { key: 'BREAD',   name: 'Whole Wheat Bread',         brand: 'Modern',     category: 'Bakery',       unit: 'loaf',   avg: 4,  inStock: true,  logs: [4, 5],      imageUrl: img('photo-1509440159596-0249088772ff') },
-    { key: 'OIL',     name: 'Sunflower Oil (1L)',        brand: 'Fortune',    category: 'Pantry',       unit: 'bottle', avg: 22, inStock: true,  logs: [22, 20],    imageUrl: img('photo-1474979266404-7eaacbcd87c5') },
-    { key: 'RICE',    name: 'Basmati Rice (5kg)',        brand: 'India Gate', category: 'Pantry',       unit: 'bag',    avg: 34, inStock: true,  logs: [34],        imageUrl: img('photo-1536304993881-ff86e0c9ef1e') },
-    { key: 'ATTA',    name: 'Whole Wheat Atta (5kg)',    brand: 'Aashirvaad', category: 'Pantry',       unit: 'bag',    avg: 26, inStock: false, logs: [26, 28],    imageUrl: img('photo-1574323347407-f5e1ad6962b3') },
-    { key: 'TEA',     name: 'Tea Powder (500g)',         brand: 'Tata Tea',   category: 'Beverages',    unit: 'pack',   avg: 21, inStock: false, logs: [21],        imageUrl: img('photo-1556679343-c7306c1976bc') },
+    { key: 'MILK',    name: 'Toned Milk (1L)',          brand: 'Amul',       category: 'Dairy & Eggs', unit: 'packet', avg: 3,  inStock: true,  logs: [3, 2, 4],   imageUrl: `${OFF}/890/126/215/0064/front_en.37.400.jpg` },
+    { key: 'BISCUIT', name: 'Marie Gold (250g)',         brand: 'Britannia',  category: 'Snacks',       unit: 'pack',   avg: 6,  inStock: true,  logs: [6, 7, 5],   imageUrl: `${OFF}/890/106/316/2914/front_en.3.400.jpg` },
+    { key: 'BREAD',   name: 'Whole Wheat Bread',         brand: 'Modern',     category: 'Bakery',       unit: 'loaf',   avg: 4,  inStock: true,  logs: [4, 5],      imageUrl: `${OFF}/890/404/355/1548/front_en.15.400.jpg` },
+    { key: 'OIL',     name: 'Sunflower Oil (1L)',        brand: 'Fortune',    category: 'Pantry',       unit: 'bottle', avg: 22, inStock: true,  logs: [22, 20],    imageUrl: `${OFF}/890/600/728/0242/front_en.18.400.jpg` },
+    { key: 'RICE',    name: 'Basmati Rice (5kg)',        brand: 'India Gate', category: 'Pantry',       unit: 'bag',    avg: 34, inStock: true,  logs: [34],        imageUrl: `${OFF}/069/022/530/1244/front_en.9.400.jpg` },
+    { key: 'ATTA',    name: 'Whole Wheat Atta (5kg)',    brand: 'Aashirvaad', category: 'Pantry',       unit: 'bag',    avg: 26, inStock: false, logs: [26, 28],    imageUrl: `${OFF}/890/172/501/6838/front_en.7.400.jpg` },
+    { key: 'TEA',     name: 'Tea Powder (500g)',         brand: 'Tata Tea',   category: 'Beverages',    unit: 'pack',   avg: 21, inStock: false, logs: [21],        imageUrl: `${OFF}/890/105/200/0906/front_en.3.400.jpg` },
 ];
 
 const DAY = 24 * 60 * 60 * 1000;
