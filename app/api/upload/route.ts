@@ -3,6 +3,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { auth } from '@/auth';
+import { serverError } from '@/lib/apiError';
 
 // Files land in public/uploads, which is a persistent Docker volume in prod.
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
@@ -47,9 +48,6 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true, url: `/uploads/${filename}` });
     } catch (error: any) {
-        return NextResponse.json(
-            { success: false, message: 'Upload failed', error: error.message },
-            { status: 500 },
-        );
+        return serverError('upload', error, 'Upload failed');
     }
 }

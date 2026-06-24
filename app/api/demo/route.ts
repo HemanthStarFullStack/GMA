@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import { Product, Inventory, ConsumptionLog, ShoppingList, User } from '@/lib/models';
 import { auth } from '@/auth';
+import { serverError } from '@/lib/apiError';
 
 /**
  * Demo onboarding data.
@@ -127,7 +128,7 @@ export async function POST() {
 
         return NextResponse.json({ success: true, seeded: true, count: DEMO.length });
     } catch (error: any) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return serverError('demo', error);
     }
 }
 
@@ -158,6 +159,6 @@ export async function DELETE() {
             removed: { inventory: inv.deletedCount, logs: logs.deletedCount, shopping: shop.deletedCount, products: prods.deletedCount },
         });
     } catch (error: any) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return serverError('demo', error);
     }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { ConsumptionLog, Inventory, Product } from '@/lib/models';
 import { auth } from '@/auth';
+import { serverError } from '@/lib/apiError';
 
 export async function GET() {
     try {
@@ -38,11 +39,7 @@ export async function GET() {
             data: enrichedLogs
         });
     } catch (error: any) {
-        return NextResponse.json({
-            success: false,
-            message: 'Failed to fetch history',
-            error: error.message
-        }, { status: 500 });
+        return serverError('history.GET', error, 'Failed to fetch history');
     }
 }
 
@@ -78,10 +75,6 @@ export async function POST(request: Request) {
             data: newLog
         });
     } catch (error: any) {
-        return NextResponse.json({
-            success: false,
-            message: 'Failed to log consumption',
-            error: error.message
-        }, { status: 500 });
+        return serverError('history.POST', error, 'Failed to log consumption');
     }
 }

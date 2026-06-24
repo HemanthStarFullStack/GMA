@@ -8,7 +8,10 @@ export default auth((req) => {
     const isLoggedIn = !!req.auth
     const isOnDashboard = req.nextUrl.pathname.startsWith('/inventory') ||
         req.nextUrl.pathname.startsWith('/scan') ||
-        req.nextUrl.pathname.startsWith('/history')
+        req.nextUrl.pathname.startsWith('/history') ||
+        req.nextUrl.pathname.startsWith('/analytics') ||
+        req.nextUrl.pathname.startsWith('/shopping') ||
+        req.nextUrl.pathname.startsWith('/settings')
 
     if (isOnDashboard) {
         if (isLoggedIn) return

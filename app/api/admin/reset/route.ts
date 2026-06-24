@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { Product, Inventory, ConsumptionLog, ShoppingList } from '@/lib/models';
 import { requireAdmin } from '@/lib/adminGuard';
+import { serverError } from '@/lib/apiError';
 
 /**
  * One-shot data reset for a fresh start.
@@ -48,9 +49,6 @@ export async function POST(request: Request) {
             },
         });
     } catch (error: any) {
-        return NextResponse.json(
-            { success: false, message: 'Reset failed', error: error.message },
-            { status: 500 },
-        );
+        return serverError('admin.reset', error, 'Reset failed');
     }
 }

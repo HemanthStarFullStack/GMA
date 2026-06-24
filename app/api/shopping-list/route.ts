@@ -4,6 +4,7 @@ import { ShoppingList, Product } from '@/lib/models';
 import { buildForecasts, isLow } from '@/lib/forecast';
 import { addToInventory } from '@/lib/inventory';
 import { auth } from '@/auth';
+import { serverError } from '@/lib/apiError';
 
 /**
  * Shopping list = what you still need to buy.
@@ -110,7 +111,7 @@ export async function GET() {
             },
         });
     } catch (error: any) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return serverError('shopping-list', error);
     }
 }
 
@@ -136,7 +137,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true, data: { _id: String(entry._id) } });
     } catch (error: any) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return serverError('shopping-list', error);
     }
 }
 
@@ -173,7 +174,7 @@ export async function PATCH(request: Request) {
 
         return NextResponse.json({ success: true });
     } catch (error: any) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return serverError('shopping-list', error);
     }
 }
 
@@ -196,6 +197,6 @@ export async function DELETE(request: Request) {
 
         return NextResponse.json({ success: true });
     } catch (error: any) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return serverError('shopping-list', error);
     }
 }

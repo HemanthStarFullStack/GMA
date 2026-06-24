@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import { Inventory, Product, ConsumptionLog } from '@/lib/models';
 import { addToInventory } from '@/lib/inventory';
 import { auth } from '@/auth';
+import { serverError } from '@/lib/apiError';
 
 export async function GET() {
     try {
@@ -30,10 +31,7 @@ export async function GET() {
 
         return NextResponse.json({ success: true, data: populatedItems });
     } catch (error: any) {
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch inventory', error: error.message },
-            { status: 500 },
-        );
+        return serverError('inventory.GET', error, 'Failed to fetch inventory');
     }
 }
 
@@ -97,10 +95,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true, message: 'Item added to inventory', data: item });
     } catch (error: any) {
-        return NextResponse.json(
-            { success: false, message: 'Failed to add item', error: error.message },
-            { status: 500 },
-        );
+        return serverError('inventory.POST', error, 'Failed to add item');
     }
 }
 
@@ -169,10 +164,7 @@ export async function PATCH(request: Request) {
 
         return NextResponse.json({ success: true, message: 'Quantity updated', data: row });
     } catch (error: any) {
-        return NextResponse.json(
-            { success: false, message: 'Failed to update quantity', error: error.message },
-            { status: 500 },
-        );
+        return serverError('inventory.PATCH', error, 'Failed to update quantity');
     }
 }
 
@@ -199,9 +191,6 @@ export async function DELETE(request: Request) {
 
         return NextResponse.json({ success: true, message: 'Item deleted' });
     } catch (error: any) {
-        return NextResponse.json(
-            { success: false, message: 'Failed to delete item', error: error.message },
-            { status: 500 },
-        );
+        return serverError('inventory.DELETE', error, 'Failed to delete item');
     }
 }

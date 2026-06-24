@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { predictProductMeta } from '@/lib/gemini';
 import connectDB from '@/lib/mongodb';
 import { User } from '@/lib/models';
+import { serverError } from '@/lib/apiError';
 
 /**
  * On-demand prediction for the scan/confirm form. The user can correct the
@@ -48,9 +49,6 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true, data: meta });
     } catch (error: any) {
-        return NextResponse.json(
-            { success: false, message: 'Prediction failed', error: error.message },
-            { status: 500 },
-        );
+        return serverError('predict', error, 'Prediction failed');
     }
 }

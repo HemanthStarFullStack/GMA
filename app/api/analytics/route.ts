@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { buildForecasts } from '@/lib/forecast';
 import { auth } from '@/auth';
+import { serverError } from '@/lib/apiError';
 
 /**
  * Consumption analytics + run-out predictions.
@@ -38,6 +39,6 @@ export async function GET() {
         });
     } catch (error: any) {
         console.error('Analytics error:', error);
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return serverError('analytics', error);
     }
 }

@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import { User, Inventory, Product } from '@/lib/models';
 import { auth } from '@/auth';
+import { serverError } from '@/lib/apiError';
 
 /**
  * Re-estimate shelf-life for every active (non-demo) product the user holds,
@@ -76,7 +77,7 @@ export async function GET() {
             },
         });
     } catch (error: any) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return serverError('user', error);
     }
 }
 
@@ -152,6 +153,6 @@ export async function PUT(request: Request) {
             data: { familySize: newFamily, surveyFrequency: newSurvey, reestimating },
         });
     } catch (error: any) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return serverError('user', error);
     }
 }
