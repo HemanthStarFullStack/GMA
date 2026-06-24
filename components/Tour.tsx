@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
-import { getPhase, setPhase, isTourDone, markTourDone, type TourPhase } from "@/lib/tour-state";
+import { getPhase, setPhase, clearPhase, type TourPhase } from "@/lib/tour-state";
 
 const PHASE_PATHS: Record<TourPhase, string> = {
     home: "/",
@@ -34,7 +34,7 @@ const cleanup = async () => {
 };
 
 export default function GmaTour() {
-    const { status } = useSession();
+    const { data: session, status } = useSession();
     const pathname = usePathname();
     const router = useRouter();
     const dRef = useRef<ReturnType<typeof driver> | null>(null);
@@ -42,24 +42,29 @@ export default function GmaTour() {
 
     useEffect(() => {
         if (status !== "authenticated") return;
+        const userId = session?.user?.id;
+        if (!userId) return;
 
         const id = ++runId.current;
 
         const run = async () => {
-            let phase = getPhase();
+            let phase = getPhase(userId);
 
-            // Detect first-time user (triggers on / or /inventory — whichever they land on first)
-            if (!phase && !isTourDone() && (pathname === "/" || pathname === "/inventory")) {
+            // No active phase → ask the SERVER whether this account still needs the
+            // tour. Server `tourCompleted` is the single source of truth (localStorage
+            // is browser-global and can't tell accounts apart). Trigger on / or
+            // /inventory — whichever the user lands on first after login.
+            if (!phase && (pathname === "/" || pathname === "/inventory")) {
                 try {
                     const res = await fetch("/api/user");
                     if (runId.current !== id) return;
                     const json = await res.json();
-                    if (json?.data?.tourCompleted) { markTourDone(); return; }
-                    // Seed demo data async — will be ready long before user reaches /inventory in tour
+                    if (!json?.success || json?.data?.tourCompleted) return;
+                    // Seed demo data async — ready long before the tour reaches /inventory
                     fetch("/api/demo", { method: "POST" }).catch(() => {});
-                    setPhase("home");
+                    setPhase(userId, "home");
                     phase = "home";
-                    // If we landed on inventory first, bounce to home to start the tour there
+                    // Landed on inventory first → bounce to home to start the tour there
                     if (pathname !== "/") { router.push("/"); return; }
                 } catch { return; }
             }
@@ -78,10 +83,10 @@ export default function GmaTour() {
             const end = (skip: boolean) => {
                 if (runId.current !== id) return;
                 dRef.current = null;
-                if (skip) { markTourDone(); cleanup(); return; }
+                if (skip) { clearPhase(); cleanup(); return; }
                 const next = NEXT_PHASE[p];
-                if (next) { setPhase(next); router.push(PHASE_PATHS[next]); }
-                else { markTourDone(); cleanup(); }
+                if (next) { setPhase(userId, next); router.push(PHASE_PATHS[next]); }
+                else { clearPhase(); cleanup(); }
             };
 
             const stepsMap: Record<TourPhase, object[]> = {
@@ -149,7 +154,7 @@ export default function GmaTour() {
             dRef.current = null;
             try { d?.destroy(); } catch { /* noop */ }
         };
-    }, [pathname, status, router]);
+    }, [pathname, status, session?.user?.id, router]);
 
     return null;
 }
