@@ -213,7 +213,7 @@ export default function InventoryPage() {
                     </Link>
                     <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">Inventory</h1>
                     <div className="flex items-center gap-2 sm:gap-3">
-                        <Link href="/shopping" title="Shopping list" className="hidden sm:flex w-10 h-10 rounded-full border border-line-strong items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors">
+                        <Link href="/shopping" data-tour="shopping" title="Shopping list" className="flex w-10 h-10 rounded-full border border-line-strong items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors">
                             <ShoppingCart className="w-5 h-5" />
                         </Link>
                         <Link id="tour-analytics" href="/analytics" title="Analytics" className="hidden sm:flex w-10 h-10 rounded-full border border-line-strong items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors">
@@ -246,7 +246,7 @@ export default function InventoryPage() {
                         {/* Search · sort · section filter */}
                         <div className="mb-8 space-y-3">
                             <div className="flex flex-col sm:flex-row gap-3">
-                                <div className="relative flex-1">
+                                <div data-tour="search" className="relative flex-1">
                                     <Search className="w-4 h-4 text-ink-faint absolute left-3 top-1/2 -translate-y-1/2" />
                                     <input
                                         value={query}

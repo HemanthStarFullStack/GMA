@@ -42,7 +42,7 @@ export default function ProductCard({ item, onConsume, onDelete, onAdjust }: Pro
                     </h3>
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                         {onAdjust ? (
-                            <span className="inline-flex items-center gap-1.5">
+                            <span data-tour="adjust" className="inline-flex items-center gap-1.5">
                                 <button
                                     onClick={() => (quantity > 1 ? onAdjust(_id, -1) : onConsume(_id))}
                                     title={quantity > 1 ? "Remove one" : "Finish last one"}
