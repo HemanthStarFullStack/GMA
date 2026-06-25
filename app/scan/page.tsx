@@ -24,7 +24,7 @@ type Form = {
     category: string;
     unit: string;
     quantity: number;
-    averageDuration: number;
+    averageDuration: number | ""; // "" while the field is being edited/cleared
     imageUrl: string | null;
     source: string;
     addedBy: "barcode" | "manual";
@@ -477,7 +477,13 @@ export default function ScanPage() {
                                             type="number"
                                             min={1}
                                             value={form.averageDuration}
-                                            onChange={(e) => setForm({ ...form, averageDuration: Math.max(1, +e.target.value || 1) })}
+                                            // Allow the field to go empty while typing (so you can erase
+                                            // the prefilled value and type a new one, e.g. "1"); clamp on blur.
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                setForm({ ...form, averageDuration: v === "" ? "" : Math.max(1, parseInt(v, 10) || 1) });
+                                            }}
+                                            onBlur={() => setForm((f) => ({ ...f, averageDuration: Math.max(1, Number(f.averageDuration) || 14) }))}
                                             className={inputCls}
                                         />
                                         <span className="text-sm text-ink-soft whitespace-nowrap">days / unit</span>

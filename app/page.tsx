@@ -1,4 +1,5 @@
 import Link from "next/link";
+import mongoose from "mongoose";
 import { Camera, Package, History, Settings, BarChart3, ArrowRight, ShoppingCart } from "lucide-react";
 import { auth } from "@/auth";
 import UserMenu from "@/components/UserMenu";
@@ -21,7 +22,10 @@ async function getHeroItems(userId: string): Promise<HeroItem[]> {
     const barcodes = invItems.map((i) => i.productId);
     const [products, user] = await Promise.all([
         Product.find({ barcode: { $in: barcodes } }).lean(),
-        User.findById(userId).select("familySize familySizeLog").lean(),
+        // Guard: User._id is an ObjectId; findById throws on a non-ObjectId id.
+        mongoose.Types.ObjectId.isValid(userId)
+            ? User.findById(userId).select("familySize familySizeLog").lean()
+            : Promise.resolve(null),
     ]);
     const prodMap = new Map(products.map((p) => [p.barcode, p]));
     const currentSize = Math.max(1, user?.familySize ?? 1);
@@ -56,9 +60,10 @@ async function getHeroItems(userId: string): Promise<HeroItem[]> {
 export default async function HomePage() {
     const session = await auth();
 
-    const heroItems = session?.user?.id ? await getHeroItems(session.user.id) : [];
+    // Never let a DB/forecast hiccup 500 the landing page — fall back to safe defaults.
+    const heroItems = session?.user?.id ? await getHeroItems(session.user.id).catch(() => []) : [];
     const isGuest = !session?.user;
-    const lowCount = session?.user?.id ? await lowStockCount(session.user.id) : 0;
+    const lowCount = session?.user?.id ? await lowStockCount(session.user.id).catch(() => 0) : 0;
 
     const tiles = [
         { href: "/inventory", label: "Inventory", note: "What you have",     Icon: Package,  tint: "text-olive" },

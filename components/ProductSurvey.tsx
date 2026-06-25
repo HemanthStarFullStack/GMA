@@ -20,16 +20,18 @@ export default function ProductSurvey({
     familySize = 1,
     onSubmit,
 }: ProductSurveyProps) {
-    const [reportedDays, setReportedDays] = useState<number>(expectedDays);
+    // "" while the field is being cleared/edited so the user can erase and retype.
+    const [reportedDays, setReportedDays] = useState<number | "">(expectedDays);
     const [notes, setNotes] = useState("");
     const [showAnomalyQuestions, setShowAnomalyQuestions] = useState(false);
 
     if (!isOpen) return null;
 
-    const isAnomaly = Math.abs(reportedDays - expectedDays) > expectedDays * 0.3;
+    const isAnomaly = reportedDays !== "" && Math.abs(reportedDays - expectedDays) > expectedDays * 0.3;
 
     const handleSubmit = () => {
-        onSubmit({ userReportedDays: reportedDays, notes: notes || undefined });
+        const days = reportedDays === "" ? expectedDays : Math.max(1, Number(reportedDays));
+        onSubmit({ userReportedDays: days, notes: notes || undefined });
         onClose();
     };
 
@@ -76,7 +78,11 @@ export default function ProductSurvey({
                         type="number"
                         min="1"
                         value={reportedDays}
-                        onChange={(e) => setReportedDays(Math.max(1, parseInt(e.target.value) || 1))}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            setReportedDays(v === "" ? "" : Math.max(1, parseInt(v, 10) || 1));
+                        }}
+                        onBlur={() => setReportedDays((d) => (d === "" ? expectedDays : Math.max(1, Number(d) || expectedDays)))}
                         className="w-full px-4 py-2 rounded-lg border border-line-strong bg-card text-ink focus:ring-2 focus:ring-terracotta/40 focus:border-terracotta outline-none"
                     />
                 </div>

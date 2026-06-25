@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import { ConsumptionLog, Inventory, Product, User } from '@/lib/models';
 import { depletion, type SizeSegment } from '@/lib/depletion';
@@ -41,10 +42,15 @@ export interface ProductForecast {
 export async function buildForecasts(userId: string): Promise<ProductForecast[]> {
     await connectDB();
 
-    const [currentInventory, consumptionLogs, user] = await Promise.all([
+    // userId is a string everywhere on Inventory/ConsumptionLog, but User._id is an
+    // ObjectId — findById throws a CastError on a non-ObjectId id (e.g. the dev test
+    // user). Guard it so a forecast never crashes the caller (home page, analytics).
+    const user = mongoose.Types.ObjectId.isValid(userId)
+        ? await User.findById(userId).select('familySize familySizeLog').lean()
+        : null;
+    const [currentInventory, consumptionLogs] = await Promise.all([
         Inventory.find({ userId }).lean(),
         ConsumptionLog.find({ userId }).lean(),
-        User.findById(userId).select('familySize familySizeLog').lean(),
     ]);
     const currentSize = Math.max(1, user?.familySize ?? 1);
     const sizeLog = (user?.familySizeLog as SizeSegment[] | undefined) ?? [];
