@@ -206,14 +206,36 @@ export default function ScanPage() {
             const vis = await visRes.json();
             const q = vis.data?.quantity;
             const p = vis.data?.price;
-            if (!q && !p) {
-                setToast("Couldn't find details on the back — set them manually.");
+            // The back VLM often returns whole paragraphs (composition, marketing)
+            // as "quantity" — accept it only if it actually looks like a net size /
+            // price. AND only fill when the front didn't already give a real value,
+            // so a correct front read (e.g. "1000 ml") is never clobbered. Fields
+            // stay editable for manual override.
+            const hasRealUnit = !!form.unit && form.unit.trim().toLowerCase() !== "units";
+            const hasPrice = !!form.price.trim();
+            const sizeFromBack = looksLikeSize(q) ? q.trim() : undefined;
+            const priceFromBack = looksLikePrice(p) ? p.trim() : undefined;
+            const applyUnit = !!sizeFromBack && !hasRealUnit;
+            const applyPrice = !!priceFromBack && !hasPrice;
+            if (!applyUnit && !applyPrice) {
+                setToast(
+                    (q || p)
+                        ? "Couldn't read a clear size/price on the back — set it manually."
+                        : "Couldn't find details on the back — set them manually.",
+                );
                 return;
             }
-            const nextUnit = q || form.unit;
-            const nextPrice = p || form.price;
-            setForm((f) => ({ ...f, ...(q ? { unit: q } : {}), ...(p ? { price: p } : {}) }));
-            const parts = [q && `size ${q}`, p && `price ${p}`].filter(Boolean).join(", ");
+            const nextUnit = applyUnit && sizeFromBack ? sizeFromBack : form.unit;
+            const nextPrice = applyPrice && priceFromBack ? priceFromBack : form.price;
+            setForm((f) => ({
+                ...f,
+                ...(applyUnit && sizeFromBack ? { unit: sizeFromBack } : {}),
+                ...(applyPrice && priceFromBack ? { price: priceFromBack } : {}),
+            }));
+            const parts = [
+                applyUnit && sizeFromBack && `size ${sizeFromBack}`,
+                applyPrice && priceFromBack && `price ${priceFromBack}`,
+            ].filter(Boolean).join(", ");
 
             // Size (and price) are strong signals for shelf life — a 1 L bottle
             // lasts far longer than 200 ml. Refresh the duration estimate with the
@@ -360,7 +382,6 @@ export default function ScanPage() {
                                     ref={fileRef}
                                     type="file"
                                     accept="image/*"
-                                    capture="environment"
                                     className="hidden"
                                     onChange={(e) => onImageFile(e.target.files?.[0])}
                                 />
@@ -516,6 +537,14 @@ async function downscale(file: File, maxEdge = 1600): Promise<Blob> {
     c.getContext("2d")?.drawImage(bmp, 0, 0, c.width, c.height);
     return new Promise<Blob>((res) => c.toBlob((b) => res(b ?? file), "image/jpeg", 0.85));
 }
+
+// Guards for back-panel reads. A real net quantity is short and is a number
+// followed by a unit; a real price has a currency marker. Anything longer or
+// without that shape is the VLM dumping composition/marketing text — reject it.
+const SIZE_RE = /\b\d+(\.\d+)?\s?(ml|l|ltr|litre|liter|cl|kg|g|gm|gms|gram|grams|mg|pcs?|pieces?|x|n|units?|caps?|capsules?|tablets?|sachets?)\b/i;
+const PRICE_RE = /(₹|rs\.?|inr|mrp)\s?\d|\d\s?(₹|rs\.?|\/-)/i;
+const looksLikeSize = (s?: string): s is string => !!s && s.trim().length <= 24 && SIZE_RE.test(s);
+const looksLikePrice = (s?: string): s is string => !!s && s.trim().length <= 24 && PRICE_RE.test(s);
 
 const inputCls = "w-full px-3 py-2 rounded-lg border border-line-strong bg-card focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none text-sm text-ink placeholder:text-ink-faint";
 
