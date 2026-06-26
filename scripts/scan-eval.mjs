@@ -54,9 +54,11 @@ Field rules:
 - category: Biscuits, cookies, wafers, chips, chocolate, namkeen → "Snacks" (NOT Bakery; Bakery = fresh bread/buns/cakes only). Juice/soda/water/tea/coffee → "Beverages". Talc/soap/shampoo/cream/face wash/deodorant/body spray → "Personal Care". Rice/flour/oats/muesli/cereal/oil/sugar/salt/spices/noodles → "Pantry".
 
 Hard rules:
+- PREFER EMPTY OVER GUESSING. If an attribute is not clearly on the label, or you are not confident, return value:"" with confidence:"low". Never fill a field with a plausible-but-unverified guess (don't invent a size, a flavor, or a product type you can't justify from the text). A blank field is better than a wrong one.
+- Mark confidence "low" whenever you infer, are unsure, or the OCR text is garbled — those values will be discarded, so only put "high"/"medium" on values you can actually see in the text.
+- category: if you cannot confidently classify it, use "Other" rather than picking a plausible-looking wrong category.
 - IGNORE marketing ("100% NATURAL","#1 BRAND","NEW PACK","NO ADDED SUGAR","FREE"), addresses, batch, dates, FSSAI, "Marketed by"/"Manufactured by" company names.
 - "50 g EXTRA","20% MORE","9g Extra","FREE 60 g" are PROMOS — never brand, never size.
-- confidence "low" whenever you infer or are unsure.
 
 Examples (input -> output):
 PROMINENT: POND'S | SECONDARY: DREAMFLOWER, fragrant talcum powder, PINK LILY | SMALL_PRINT: 50 g EXTRA | PANEL: front
@@ -101,21 +103,26 @@ async function structure(raw) {
 
 // read a field that may be a string or {value,confidence}
 const val = (f) => (f && typeof f === 'object' ? f.value : f) || '';
+const conf = (f) => { const c = f && typeof f === 'object' ? f.confidence : undefined; return (c === 'high' || c === 'low') ? c : 'medium'; };
 // grounding: every word of v present in hay?
 const grounded = (v, hay, allowType=false) => {
   const w = norm(v).trim().split(' ').filter(x => x.length >= 2);
   return w.length > 0 && w.every(x => hay.includes(x) || (allowType && TYPE_WORDS.has(x)));
 };
 
+// Mirrors lib/labelStructure.ts: downgrade ungrounded values to 'low', then in
+// production ('warn') BLANK anything low-confidence (prefer empty over a guess).
 function applyGrounding(out, raw) {
   if (GROUND_MODE === 'off') return out;
   const hay = norm(raw);
-  for (const k of ['brand','flavor']) {
+  const proc = (k, allowType = false) => {
     const v = val(out[k]);
-    if (v && !grounded(v, hay)) {
-      if (GROUND_MODE === 'drop') out[k] = '';
-    }
-  }
+    if (!v) return;
+    let c = conf(out[k]);
+    if (!grounded(v, hay, allowType)) c = 'low';
+    if (c === 'low') out[k] = ''; // drop (baseline) and warn (prod) both blank low-confidence
+  };
+  proc('brand'); proc('name', true); proc('flavor'); proc('size');
   return out;
 }
 
@@ -142,7 +149,13 @@ console.log(`reader=${READER_VARIANT}  struct=${STRUCT_VARIANT}  model=${GM}  gr
 
 // EVAL_ONLY=ponds,oreo  -> only score those product keys (cheap sanity runs)
 const ONLY = (process.env.EVAL_ONLY || '').split(',').map((s) => s.trim()).filter(Boolean);
-const entries = Object.entries(TRUTH.files).filter(([, k]) => ONLY.length === 0 || ONLY.includes(k));
+// EVAL_MAXPER=2 -> at most N images per product (covers all products, fewer calls)
+const MAXPER = Number(process.env.EVAL_MAXPER || 0);
+let entries = Object.entries(TRUTH.files).filter(([, k]) => ONLY.length === 0 || ONLY.includes(k));
+if (MAXPER) {
+  const seen = {};
+  entries = entries.filter(([, k]) => ((seen[k] = (seen[k] || 0) + 1) <= MAXPER));
+}
 for (const [file, prodKey] of entries) {
   const truth = TRUTH.products[prodKey];
   if (!truth) { console.log(`! no product '${prodKey}' for ${file}`); continue; }

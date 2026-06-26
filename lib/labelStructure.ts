@@ -87,9 +87,11 @@ Field rules:
 - category mapping: Biscuits, cookies, wafers, chips, chocolate, namkeen -> "Snacks" (NOT Bakery; Bakery = fresh bread/buns/cakes only). Juice/soda/water/tea/coffee -> "Beverages". Talc/soap/shampoo/cream/face wash/deodorant/body spray -> "Personal Care". Rice/flour/oats/muesli/cereal/oil/sugar/salt/spices/noodles -> "Pantry".
 
 Hard rules:
+- PREFER EMPTY OVER GUESSING. If an attribute is not clearly on the label, or you are not confident, return value:"" with confidence:"low". Never fill a field with a plausible-but-unverified guess (don't invent a size, a flavor, or a product type you can't justify from the text). A blank field is better than a wrong one.
+- Mark confidence "low" whenever you infer, are unsure, or the OCR text is garbled — those values will be discarded, so only put "high"/"medium" on values you can actually see in the text.
+- category: if you cannot confidently classify it, use "Other" rather than picking a plausible-looking wrong category.
 - IGNORE marketing ("100% NATURAL","#1 BRAND","NEW PACK","NO ADDED SUGAR","FREE"), addresses, batch, dates, FSSAI, "Marketed by"/"Manufactured by" company names.
 - "50 g EXTRA","20% MORE","9g Extra","FREE 60 g" are PROMOS - never brand, never size.
-- confidence "low" whenever you infer or are unsure.
 
 Examples (input -> output):
 PROMINENT: POND'S | SECONDARY: DREAMFLOWER, fragrant talcum powder, PINK LILY | SMALL_PRINT: 50 g EXTRA | PANEL: front
@@ -230,27 +232,38 @@ export async function structureLabel(text: string): Promise<LabelFields | null> 
         let brand = val(obj.brand);
         let name = val(obj.name);
         const flavor = val(obj.flavor);
+        const size = val(obj.size);
+        const price = val(obj.price);
         const panel: 'front' | 'back' = obj.panel === 'back' ? 'back' : 'front';
 
         // Back panel: identity is never reliable here (it's nutrition/legal text).
         // Force it empty so a "Marketed by Marico" never becomes the brand.
         if (panel === 'back') { brand = ''; name = ''; }
 
+        // Final per-field confidence: the model's own, downgraded to 'low' when
+        // the value isn't grounded in the OCR text.
+        const cBrand = downgradeIfUngrounded(brand, conf(obj.brand));
+        const cName = downgradeIfUngrounded(name, conf(obj.name), true);
+        const cFlavor = downgradeIfUngrounded(flavor, conf(obj.flavor));
+        const cSize = conf(obj.size);
+        const cPrice = conf(obj.price);
+
+        // Conservative fill: NEVER surface a value the model isn't sure of. If a
+        // field's final confidence is 'low' (self-reported OR ungrounded), leave
+        // it EMPTY — an empty field the user fills beats a confident-looking wrong
+        // guess. Only high/medium values pass through.
+        const sure = (v: string, c: Confidence) => (c === 'low' ? '' : v);
+
         const fields: LabelFields = {
-            brand,
-            name,
-            flavor,
-            size: val(obj.size),
-            price: val(obj.price),
+            brand: sure(brand, cBrand),
+            name: sure(name, cName),
+            flavor: sure(flavor, cFlavor),
+            size: sure(size, cSize),
+            price: sure(price, cPrice),
             category: normalizeCategory(obj.category),
             packCount: Number.isFinite(obj.pack_count) && obj.pack_count > 0 ? Math.round(obj.pack_count) : 1,
             panel,
-            confidence: {
-                brand: downgradeIfUngrounded(brand, conf(obj.brand)),
-                name: downgradeIfUngrounded(name, conf(obj.name), true),
-                flavor: downgradeIfUngrounded(flavor, conf(obj.flavor)),
-                size: conf(obj.size),
-            },
+            confidence: { brand: cBrand, name: cName, flavor: cFlavor, size: cSize },
         };
         // Worth using if it produced any identity or a useful attribute.
         return fields.brand || fields.name || fields.size || fields.category !== 'Other' ? fields : null;
