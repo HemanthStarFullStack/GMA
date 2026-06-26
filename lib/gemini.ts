@@ -7,6 +7,13 @@ const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 // request spills over to the next instead of falling back to a heuristic.
 const GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
 
+// The duration/category predictor runs on Groq FIRST — Gemini's free quota is
+// reserved for the image reader (lib/visionOcr.ts), so a burst of label reads
+// can't 429 the estimate (which then falls to a bad 14-day heuristic). Prediction
+// is a text task Groq handles well; Gemini stays as the fallback below.
+const GROQ_KEY = process.env.GROQ_API_KEY;
+const GROQ_PREDICT_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+
 // The single source of truth for product categories across the app.
 export const CATEGORIES = [
     'Dairy & Eggs', 'Beverages', 'Fruits & Vegetables', 'Meat & Seafood',
@@ -139,7 +146,47 @@ export function normalizeCategory(raw?: string | null): string {
 }
 
 /**
- * Ask Gemini for both the consumption duration and the category in one call.
+ * Predict via Groq (gpt-oss) — same JSON contract as the Gemini path. Returns the
+ * raw prediction or null so the caller can fall through to Gemini.
+ */
+async function predictWithGroq(
+    name: string, brand: string, categoryHint: string, unit: string, extra?: PredictContext,
+): Promise<GeminiPrediction | null> {
+    if (!GROQ_KEY) return null;
+    try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
+            body: JSON.stringify({
+                model: GROQ_PREDICT_MODEL,
+                response_format: { type: 'json_object' },
+                temperature: 0.1,
+                max_tokens: 700,
+                // gpt-oss is a reasoning model — needs the effort knob + token
+                // headroom or it returns empty JSON (json_validate_failed).
+                ...(GROQ_PREDICT_MODEL.includes('gpt-oss') ? { reasoning_effort: 'low' } : {}),
+                messages: [
+                    { role: 'system', content: SYSTEM_INSTRUCTION },
+                    { role: 'user', content: buildPrompt(name, brand, categoryHint, unit, extra) },
+                ],
+            }),
+            signal: AbortSignal.timeout(9000),
+        });
+        if (!res.ok) { console.warn(`Groq predict HTTP ${res.status}`); return null; }
+        const d = await res.json();
+        const c: string = d?.choices?.[0]?.message?.content ?? '';
+        const m = c.match(/\{[\s\S]*\}/);
+        if (!m) { console.warn('Groq predict: no JSON in response'); return null; }
+        return JSON.parse(m[0]) as GeminiPrediction;
+    } catch (err) {
+        console.warn('Groq predict error:', err instanceof Error ? err.message : err);
+        return null;
+    }
+}
+
+/**
+ * Ask the predictor for both the consumption duration and the category in one
+ * call. Groq runs first; Gemini is the fallback.
  * `categoryHint` is whatever the barcode databases guessed — used as a fallback
  * if the model fails. Falls back to { 14, hint||Other } on any error.
  */
@@ -163,8 +210,32 @@ export async function predictProductMeta(
 
     const fallbackCategory = normalizeCategory(categoryHint);
     const fallback: ProductMeta = { averageDuration: forHousehold(14, fallbackCategory), category: fallbackCategory, predicted: false };
-    if (!GEMINI_API_KEY) return fallback;
 
+    // Scale a raw model prediction into the household ProductMeta — shared by the
+    // Groq and Gemini paths so both behave identically.
+    const finalize = (parsed: GeminiPrediction, src: string): ProductMeta => {
+        const perPerson = Number.isFinite(parsed.averageDuration) ? Math.max(1, Math.round(parsed.averageDuration)) : 14;
+        const category = normalizeCategory(parsed.category) || fallback.category;
+        const averageDuration = forHousehold(perPerson, category);
+        // Raw daily rate per person — stored once, used for math-only re-estimation
+        // whenever household size changes (no AI call needed).
+        const perPersonDailyRate =
+            Number.isFinite(parsed.servingsPerUnit) && parsed.servingsPerUnit > 0 &&
+            Number.isFinite(parsed.dailyUse) && parsed.dailyUse > 0
+                ? parsed.dailyUse / parsed.servingsPerUnit
+                : 1 / perPerson;
+        console.log(
+            `${src}: ${perPerson}d/person (rate=${perPersonDailyRate.toFixed(4)}) -> ${averageDuration}d for ${household}p (${category === 'Personal Care' ? 'personal, no scaling' : `÷${household}`}) · ${category} · "${name}"`,
+        );
+        return { averageDuration, category, predicted: true, perPersonDailyRate };
+    };
+
+    // Tier 1: Groq (text) — primary, separate quota from the Gemini image reader.
+    const groqPred = await predictWithGroq(name, brand, categoryHint, unit, extra);
+    if (groqPred) return finalize(groqPred, 'Groq');
+
+    // Tier 2: Gemini — fallback if Groq is down/over quota. Walk the model list;
+    // a 429/timeout on one model spills to the next (separate quota bucket).
     const body = {
         system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
         contents: [{ role: 'user', parts: [{ text: buildPrompt(name, brand, categoryHint, unit, extra) }] }],
@@ -179,10 +250,7 @@ export async function predictProductMeta(
             thinkingConfig: { thinkingBudget: 0 },
         },
     };
-
-    // Walk the model list. A 429/timeout on one model immediately tries the
-    // next (separate quota bucket) rather than failing to a heuristic.
-    for (const model of GEMINI_MODELS) {
+    for (const model of (GEMINI_API_KEY ? GEMINI_MODELS : [])) {
         try {
             const res = await fetch(`${GEMINI_BASE}/${model}:generateContent?key=${GEMINI_API_KEY}`, {
                 method: 'POST',
@@ -205,32 +273,15 @@ export async function predictProductMeta(
                 console.warn(`Gemini [${model}] returned no JSON:`, rawText.slice(0, 100));
                 continue;
             }
-            const parsed: GeminiPrediction = JSON.parse(jsonMatch[0]);
-
-            const perPerson = Number.isFinite(parsed.averageDuration) ? Math.max(1, Math.round(parsed.averageDuration)) : 14;
-            const category = normalizeCategory(parsed.category) || fallback.category;
-            const averageDuration = forHousehold(perPerson, category);
-
-            // Raw daily rate per person — stored once, used for math-only
-            // re-estimation whenever household size changes (no AI call needed).
-            const perPersonDailyRate =
-                Number.isFinite(parsed.servingsPerUnit) && parsed.servingsPerUnit > 0 &&
-                Number.isFinite(parsed.dailyUse) && parsed.dailyUse > 0
-                    ? parsed.dailyUse / parsed.servingsPerUnit
-                    : 1 / perPerson;
-
-            console.log(
-                `Gemini: ${perPerson}d/person (rate=${perPersonDailyRate.toFixed(4)}) -> ${averageDuration}d for ${household}p (${category === 'Personal Care' ? 'personal, no scaling' : `÷${household}`}) · ${category} · "${name}"`,
-            );
-            return { averageDuration, category, predicted: true, perPersonDailyRate };
+            return finalize(JSON.parse(jsonMatch[0]) as GeminiPrediction, `Gemini [${model}]`);
         } catch (err) {
             console.warn(`Gemini [${model}] error:`, err);
         }
     }
 
-    // Tier 2: local Ollama model (with web_search) — only when Gemini is down /
-    // rate-limited. Skipped instantly if Ollama isn't running.
-    console.warn(`Gemini failed on all models (${GEMINI_MODELS.join(', ')}) for "${name}" — trying local LLM`);
+    // Tier 3: local Ollama model (with web_search) — only when Groq AND Gemini are
+    // down / rate-limited. Skipped instantly if Ollama isn't running.
+    console.warn(`Groq + Gemini predictors failed for "${name}" — trying local LLM`);
     try {
         const { predictWithLocalLlm } = await import('./localLlm');
         const local = await predictWithLocalLlm(name, brand, categoryHint, unit, extra);

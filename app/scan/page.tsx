@@ -85,14 +85,14 @@ export default function ScanPage() {
             if (d.backPanel) {
                 const filled = [d.quantity && `size ${d.quantity}`, d.price && `price ${d.price}`].filter(Boolean).join(", ");
                 setToast(`Back panel — ${filled ? `${filled} filled in.` : ""} Snap the front for name & brand.`);
-                setForm({ ...emptyForm(), unit: d.quantity || "units", price: d.price || "", source: "ocr", imageUrl });
+                setForm({ ...emptyForm(), unit: d.quantity || "", price: d.price || "", source: "ocr", imageUrl });
                 setLowConf(new Set());
                 setMode("manual");
                 return;
             }
             if (!vis.success || !d.name) {
                 setToast("Couldn't read the label — type the details and it'll be saved.");
-                setForm({ ...emptyForm(), unit: d.quantity || "units", price: d.price || "", source: "ocr", imageUrl });
+                setForm({ ...emptyForm(), unit: d.quantity || "", price: d.price || "", source: "ocr", imageUrl });
                 setLowConf(new Set());
                 setMode("manual");
                 return;
@@ -106,7 +106,10 @@ export default function ScanPage() {
                 name: d.name,
                 brand: d.brand || "",
                 flavor: d.flavor || "",
-                unit: d.quantity || "units",
+                // No size read → leave blank so the field shows its placeholder
+                // ("e.g. 500 g") instead of the literal "units" (which reads as a
+                // bogus weight). Storage re-applies the "units" default on save.
+                unit: d.quantity || "",
                 price: d.price || "",
                 // Seed category from the structurer so the duration predictor
                 // refines a real guess instead of starting from "Other".
