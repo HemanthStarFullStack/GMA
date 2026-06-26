@@ -202,12 +202,15 @@ export async function structureLabel(text: string): Promise<LabelFields | null> 
 
         // Each field may be {value,confidence} (new contract) or a bare string
         // (be liberal in what we accept). Pull both shapes.
+        const asObj = (f: unknown): Record<string, unknown> | null =>
+            f && typeof f === 'object' ? (f as Record<string, unknown>) : null;
         const val = (f: unknown): string => {
-            if (f && typeof f === 'object' && 'value' in (f as any)) return String((f as any).value ?? '').trim();
+            const o = asObj(f);
+            if (o) return String(o.value ?? '').trim();
             return typeof f === 'string' ? f.trim() : '';
         };
         const conf = (f: unknown): Confidence => {
-            const c = f && typeof f === 'object' ? (f as any).confidence : undefined;
+            const c = asObj(f)?.confidence;
             return c === 'high' || c === 'low' ? c : 'medium';
         };
 

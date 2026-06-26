@@ -136,8 +136,8 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json({ success: isUsable(parsed), data: { ...parsed, category, confidence } });
-    } catch (err: any) {
-        console.warn('product-vision error:', err?.message || err);
+    } catch (err) {
+        console.warn('product-vision error:', err instanceof Error ? err.message : err);
         return NextResponse.json({ success: false, message: 'OCR service unavailable' }, { status: 503 });
     }
 }
