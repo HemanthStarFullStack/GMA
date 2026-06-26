@@ -54,6 +54,8 @@ export default function ScanPage() {
     const [uploadingImage, setUploadingImage] = useState(false);
     const [readingBack, setReadingBack] = useState(false);
     const [form, setForm] = useState<Form>(emptyForm());
+    // Fields the structurer flagged low-confidence — shown with a "check" hint.
+    const [lowConf, setLowConf] = useState<Set<string>>(new Set());
     const fileRef = useRef<HTMLInputElement>(null);
     const backRef = useRef<HTMLInputElement>(null);
 
@@ -84,12 +86,14 @@ export default function ScanPage() {
                 const filled = [d.quantity && `size ${d.quantity}`, d.price && `price ${d.price}`].filter(Boolean).join(", ");
                 setToast(`Back panel — ${filled ? `${filled} filled in.` : ""} Snap the front for name & brand.`);
                 setForm({ ...emptyForm(), unit: d.quantity || "units", price: d.price || "", source: "ocr", imageUrl });
+                setLowConf(new Set());
                 setMode("manual");
                 return;
             }
             if (!vis.success || !d.name) {
                 setToast("Couldn't read the label — type the details and it'll be saved.");
                 setForm({ ...emptyForm(), unit: d.quantity || "units", price: d.price || "", source: "ocr", imageUrl });
+                setLowConf(new Set());
                 setMode("manual");
                 return;
             }
@@ -104,14 +108,21 @@ export default function ScanPage() {
                 flavor: d.flavor || "",
                 unit: d.quantity || "units",
                 price: d.price || "",
+                // Seed category from the structurer so the duration predictor
+                // refines a real guess instead of starting from "Other".
+                category: d.category && CATEGORIES.includes(d.category) ? d.category : "Other",
                 source: "ocr",
                 imageUrl,
             });
+            // Highlight any field the structurer was unsure about, so the user
+            // knows what to double-check.
+            setLowConf(lowConfFields(d.confidence));
             setMode("confirm");
             void autoEstimate(d);
         } catch {
             setToast("OCR unavailable — add the product manually.");
             setForm({ ...emptyForm(), source: "ocr", imageUrl: await uploadPromise });
+            setLowConf(new Set());
             setMode("manual");
         } finally {
             setLookingUp(false);
@@ -120,6 +131,7 @@ export default function ScanPage() {
 
     const openManual = () => {
         setForm(emptyForm(`MANUAL-${Date.now()}`));
+        setLowConf(new Set());
         setMode("manual");
     };
 
@@ -131,13 +143,13 @@ export default function ScanPage() {
     // Background estimate right after a scan — patches only duration/category so
     // it never clobbers a field the user started editing. Reuses `reestimating`
     // so the Re-estimate button spins while it runs.
-    const autoEstimate = async (d: { name: string; brand?: string; flavor?: string; quantity?: string }) => {
+    const autoEstimate = async (d: { name: string; brand?: string; flavor?: string; quantity?: string; category?: string }) => {
         setReestimating(true);
         try {
             const res = await fetch("/api/predict", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: d.name, brand: d.brand, flavor: d.flavor, unit: d.quantity, size: d.quantity, category: "Other" }),
+                body: JSON.stringify({ name: d.name, brand: d.brand, flavor: d.flavor, unit: d.quantity, size: d.quantity, category: d.category || "Other" }),
             });
             const data = await res.json();
             if (data.success) {
@@ -431,19 +443,19 @@ export default function ScanPage() {
                         />
 
                         <div className="space-y-3">
-                            <Field label="Product name *">
+                            <Field label="Product name *" warn={lowConf.has("name")}>
                                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Toned Milk" className={inputCls} />
                             </Field>
                             <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3">
-                                <Field label="Brand">
+                                <Field label="Brand" warn={lowConf.has("brand")}>
                                     <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="e.g. Amul" className={inputCls} />
                                 </Field>
-                                <Field label="Flavor / variant">
+                                <Field label="Flavor / variant" warn={lowConf.has("flavor")}>
                                     <input value={form.flavor} onChange={(e) => setForm({ ...form, flavor: e.target.value })} placeholder="e.g. Aqua, Mango" className={inputCls} />
                                 </Field>
                             </div>
                             <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3">
-                                <Field label="Size / weight">
+                                <Field label="Size / weight" warn={lowConf.has("size")}>
                                     <input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="e.g. 1 L, 150 ml, 500 g" className={inputCls} />
                                 </Field>
                                 <Field label="Price">
@@ -554,10 +566,21 @@ const looksLikePrice = (s?: string): s is string => !!s && s.trim().length <= 24
 
 const inputCls = "w-full px-3 py-2 rounded-lg border border-line-strong bg-card focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none text-sm text-ink placeholder:text-ink-faint";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+// Map the structurer's per-field confidence to the set of fields to flag.
+type FieldConf = { brand?: string; name?: string; flavor?: string; size?: string };
+const lowConfFields = (c?: FieldConf): Set<string> => {
+    const s = new Set<string>();
+    (["brand", "name", "flavor", "size"] as const).forEach((k) => { if (c?.[k] === "low") s.add(k); });
+    return s;
+};
+
+function Field({ label, warn, children }: { label: string; warn?: boolean; children: React.ReactNode }) {
     return (
         <label className="block">
-            <span className="block text-xs font-semibold text-ink-soft mb-1">{label}</span>
+            <span className="block text-xs font-semibold text-ink-soft mb-1">
+                {label}
+                {warn && <span className="ml-1.5 text-[10px] font-medium text-amber" title="Low confidence — please double-check">● check</span>}
+            </span>
             {children}
         </label>
     );

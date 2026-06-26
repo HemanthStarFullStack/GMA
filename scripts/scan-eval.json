@@ -1,0 +1,154 @@
+{
+  "_README": "Truth labels for the scan accuracy eval. Each field is a list of ACCEPTABLE answers (case-insensitive, substring match both ways). size [\"\"] means 'no net size visible on the front — must NOT be fabricated'. panel back = identity must be empty. Correct anything wrong, then run scripts/scan-eval.mjs.",
+  "products": {
+    "ponds": {
+      "brand": ["Pond's", "Ponds"],
+      "name": ["Talcum Powder", "Powder"],
+      "flavor": ["Pink Lily", "Dreamflower"],
+      "size": [""],
+      "category": "Personal Care",
+      "panel": "front"
+    },
+    "saffola": {
+      "brand": ["Saffola"],
+      "name": ["Oats"],
+      "flavor": ["Creamy", "Creamy Oats", ""],
+      "size": [""],
+      "category": "Pantry",
+      "panel": "front"
+    },
+    "evian": {
+      "brand": ["Evian"],
+      "name": ["Water", "Mineral Water"],
+      "flavor": [""],
+      "size": ["1 L", "1000 ml"],
+      "category": "Beverages",
+      "panel": "front"
+    },
+    "aquafina": {
+      "brand": ["Aquafina"],
+      "name": ["Water", "Packaged Drinking Water", "Drinking Water"],
+      "flavor": [""],
+      "size": [""],
+      "category": "Beverages",
+      "panel": "front"
+    },
+    "storia": {
+      "brand": ["Storia"],
+      "name": ["Juice"],
+      "flavor": ["Pomegranate"],
+      "size": [""],
+      "category": "Beverages",
+      "panel": "front"
+    },
+    "nycil": {
+      "brand": ["Nycil"],
+      "name": ["Prickly Heat Powder", "Powder", "Talcum Powder"],
+      "flavor": ["Cool Herbal"],
+      "size": [""],
+      "category": "Personal Care",
+      "panel": "front"
+    },
+    "vlcc": {
+      "brand": ["VLCC"],
+      "name": ["Face Wash"],
+      "flavor": ["Anti Tan", "Sun Defense"],
+      "size": [""],
+      "category": "Personal Care",
+      "panel": "front"
+    },
+    "fogg": {
+      "brand": ["Fogg"],
+      "name": ["Body Spray", "Deodorant", "Deo"],
+      "flavor": ["Paradise"],
+      "size": [""],
+      "category": "Personal Care",
+      "panel": "front"
+    },
+    "oreo": {
+      "brand": ["Oreo", "Cadbury"],
+      "name": ["Biscuit", "Cookies", "Sandwich Biscuit"],
+      "flavor": ["Original", "Chocolate", "Vanilla"],
+      "size": [""],
+      "category": "Snacks",
+      "panel": "front"
+    },
+    "paperboat_swing": {
+      "brand": ["Paper Boat", "Swing"],
+      "name": ["Juice"],
+      "flavor": ["Zesty Pomegranate", "Pomegranate"],
+      "size": [""],
+      "category": "Beverages",
+      "panel": "front"
+    },
+    "little_hearts": {
+      "brand": ["Britannia", "Little Hearts"],
+      "name": ["Little Hearts", "Biscuit", "Biscuits"],
+      "flavor": ["Classic Crunch", "Classic"],
+      "size": [""],
+      "category": "Snacks",
+      "panel": "front"
+    },
+    "yogabar": {
+      "brand": ["Yoga Bar", "Yogabar"],
+      "name": ["Muesli", "Super Muesli"],
+      "flavor": ["Dark Chocolate + Cranberry", "Dark Chocolate Cranberry", "Dark Chocolate"],
+      "size": [""],
+      "category": "Pantry",
+      "panel": "front"
+    },
+    "glow_lovely": {
+      "brand": ["Glow & Lovely", "Glow and Lovely"],
+      "name": ["Cream", "Face Cream", "Serum"],
+      "flavor": ["Re-New Bright", "Renew Bright"],
+      "size": [""],
+      "category": "Personal Care",
+      "panel": "front"
+    },
+    "marico_oats_back": {
+      "brand": [""],
+      "name": [""],
+      "flavor": [""],
+      "size": ["39 g"],
+      "category": "Pantry",
+      "panel": "back"
+    }
+  },
+  "files": {
+    "843f7274-41c3-498a-9b4a-dbdf3222c40e.jpg": "ponds",
+    "014787a0-bb5c-4814-bdf4-f37e715abfc5.jpg": "ponds",
+    "17e8e216-68bb-45df-81c2-08b608cd563b.jpg": "ponds",
+    "3e0a414d-bd94-4d03-a773-35f86b49fa8d.jpg": "ponds",
+    "6afe5077-d150-465c-af3f-454b418f1a3f.jpg": "ponds",
+    "7dfc7091-5986-4c71-a0ab-b58f26e90f37.jpg": "ponds",
+    "8b35ceda-2142-4942-86ff-973cea6ed64b.jpg": "ponds",
+    "9a6017eb-9fa4-4446-8fda-591d1626b6cf.jpg": "ponds",
+    "a99f85c8-3df6-42bc-bf4d-c484e16f3751.jpg": "ponds",
+    "e9dce9c3-e726-41dc-a0af-b03bcd170e2d.jpg": "ponds",
+    "88299298-1092-43d7-8fab-02d29d803aa9.jpg": "saffola",
+    "35b1d472-8010-4beb-8261-0a9be69b0cf2.png": "saffola",
+    "4d178d82-ee7f-4127-922b-ecce115c57d1.png": "saffola",
+    "59985a4d-f0a9-444a-8522-b4d6d8e091f7.png": "saffola",
+    "a9b7e102-d5cd-402d-9a31-5280abf60f53.jpg": "evian",
+    "b4032eef-38c9-46c6-8887-a187e11cd82a.jpg": "aquafina",
+    "0d0f753c-7f29-40b5-ae9b-5fb478b2d8fc.jpg": "storia",
+    "67197118-51a1-469b-8d0e-a5340c0ce323.jpg": "storia",
+    "c3a2a34e-dbad-4d68-a04d-98c3d11b49f7.jpg": "storia",
+    "dc809933-f78d-4337-a205-ce9670d4511b.jpg": "storia",
+    "df224675-9827-4fe9-bff2-2afc39a228e0.jpg": "storia",
+    "0f9cbe4e-60d0-4171-877b-ad3783d99d8e.jpg": "nycil",
+    "875ad524-aae9-401f-b878-45c5857fe49e.jpg": "nycil",
+    "2fdac46c-f0ff-48a4-9b42-d84019a0380c.jpg": "vlcc",
+    "64595c0b-6d72-4a9e-a80a-ac0679e352d1.jpg": "fogg",
+    "9dc1f6ba-bf44-4fb8-bed2-cf6626241553.jpg": "fogg",
+    "b1bdefe3-f2d4-4be1-9b55-feac2cb44561.jpg": "fogg",
+    "ed00f1e2-8eb3-491d-8275-24aedb590f55.jpg": "fogg",
+    "7dc6e0db-2f80-4e28-a4dd-500e47bf707d.jpg": "oreo",
+    "c21da694-4225-4fde-a629-35b82ee414a9.jpg": "oreo",
+    "a5412fef-a04c-4cf3-b725-caca884695f1.jpg": "paperboat_swing",
+    "b01ec4df-f6cb-48d8-acda-353d924f40f0.jpg": "little_hearts",
+    "cd283d96-2f8a-42d6-bc52-5ca59301d706.jpg": "yogabar",
+    "e70ce2b8-fc07-4089-a90b-8b08b0b5432b.jpg": "glow_lovely",
+    "2771a2e6-94c6-4c52-bba7-4c2c546b0067.jpg": "marico_oats_back"
+  }
+}

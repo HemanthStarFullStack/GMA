@@ -1,15 +1,15 @@
 /**
- * Label structuring: turn clean OCR text into product identity fields using a
- * small local LLM (qwen2.5:1.5b via Ollama). This replaces the brittle
- * font-size/regex heuristics in parseLabel for the genuinely ambiguous call —
- * "is SWING a brand or a product name?" — which rules can't make but a model
- * with world knowledge can.
+ * Label structuring: turn OCR text into a full product identity using an LLM
+ * (Groq gpt-oss-120b primary, local Ollama fallback). Replaces the brittle
+ * font-size/regex heuristics for the genuinely ambiguous calls — "is SWING a
+ * brand or a name?", "is 50 g EXTRA the size?" — which a model with world
+ * knowledge makes far better than rules (verified on scripts/scan-eval.*).
  *
- * Scope is deliberately narrow: brand / name / flavor only. Quantity, price and
- * back-panel detection stay with parseLabel's deterministic regex (an LLM could
- * hallucinate a price; regex cannot). Fail-soft: returns null if the model is
- * unavailable, and the caller keeps parseLabel's values.
+ * Returns brand/name/flavor/size/price/category/pack_count/panel + per-field
+ * confidence. Fail-soft: returns null if no model is available, and the caller
+ * keeps parseLabel's deterministic regex values.
  */
+import { normalizeCategory } from './gemini';
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 // 1.5b (Q4_K_M, ~1.1 GB) is the proven sub-2B winner for structured JSON and
@@ -65,17 +65,53 @@ async function reachable(): Promise<boolean> {
     return lastProbe.ok;
 }
 
-const SYSTEM = `You label a grocery product from the raw OCR text of its package.
-Output ONLY compact JSON, nothing else: {"brand":"","name":"","flavor":""}
-- brand = the manufacturer / brand (e.g. Storia, Swing, Amul, Pond's).
-- name  = the product type (e.g. Juice, Biscuit, Shampoo, Toothpaste). If only a brand and flavor are printed, infer the obvious product type.
-- flavor = the variant / flavor / scent (e.g. Zesty Pomegranate, Mango, Pink Lily). Empty if none.
-Use only words present in the text for brand and flavor. Ignore marketing claims (NO ADDED SUGAR, 100% NATURAL), sizes, prices and nutrition. If unsure, use an empty string.`;
+// Full-contract structurer prompt. Validated against 35 real scans (scripts/
+// scan-eval.*): with the 120B it lifted category 0%→~97% and held brand/name at
+// ~86% while adding size/price/pack_count/panel + per-field confidence. The few-
+// shot encodes the exact traps that bit us (50 g EXTRA promo, marketing hero
+// lines, back-panel composition, "Marketed by" company != brand).
+const SYSTEM = `You extract a structured product identity from the OCR text of an Indian grocery package. The text may be grouped into zones: PROMINENT (largest type), SECONDARY (medium), SMALL_PRINT (fine print), and a PANEL marker (front|back). If it is not grouped, work from the raw text.
 
+Return ONLY this JSON, nothing else:
+{"brand":{"value":"","confidence":"high|medium|low"},"name":{"value":"","confidence":"..."},"flavor":{"value":"","confidence":"..."},"size":{"value":"","confidence":"..."},"price":{"value":"","confidence":"..."},"pack_count":1,"category":"","panel":"front|back"}
+
+Field rules:
+- brand = manufacturer/brand from the most PROMINENT text (Pond's, Saffola, Storia, Fogg). Use only words present in the text.
+- name = the product TYPE, e.g. "Talcum Powder","Oats","Juice","Body Spray","Face Wash","Biscuit","Muesli","Cream". You MAY infer the obvious type even if not printed verbatim.
+- flavor = variant/scent/sub-line (Pink Lily, Pomegranate, Cool Herbal, Paradise, Dark Chocolate + Cranberry). "" if none. Use only printed words.
+- size = the declared NET quantity ONLY, normalized "500 g","1 L","250 ml". "" if not clearly printed. NEVER a promo ("50 g EXTRA","9g Extra"), per-serving, or nutrition number.
+- price = MRP only as "₹<n>". "" if not printed.
+- pack_count = number of units in a multipack, else 1.
+- category = EXACTLY ONE of: "Dairy & Eggs","Beverages","Fruits & Vegetables","Meat & Seafood","Bakery","Pantry","Frozen Foods","Snacks","Condiments & Sauces","Cleaning & Household","Personal Care","Other".
+- panel = front or back. A back/nutrition/ingredients/legal panel: ALWAYS return brand:"" and name:"" (the brand lives on the front; a "Marketed by / Manufactured by" company in fine print is NOT the brand). Still extract size/price/category from it.
+- category mapping: Biscuits, cookies, wafers, chips, chocolate, namkeen -> "Snacks" (NOT Bakery; Bakery = fresh bread/buns/cakes only). Juice/soda/water/tea/coffee -> "Beverages". Talc/soap/shampoo/cream/face wash/deodorant/body spray -> "Personal Care". Rice/flour/oats/muesli/cereal/oil/sugar/salt/spices/noodles -> "Pantry".
+
+Hard rules:
+- IGNORE marketing ("100% NATURAL","#1 BRAND","NEW PACK","NO ADDED SUGAR","FREE"), addresses, batch, dates, FSSAI, "Marketed by"/"Manufactured by" company names.
+- "50 g EXTRA","20% MORE","9g Extra","FREE 60 g" are PROMOS - never brand, never size.
+- confidence "low" whenever you infer or are unsure.
+
+Examples (input -> output):
+PROMINENT: POND'S | SECONDARY: DREAMFLOWER, fragrant talcum powder, PINK LILY | SMALL_PRINT: 50 g EXTRA | PANEL: front
+-> {"brand":{"value":"Pond's","confidence":"high"},"name":{"value":"Talcum Powder","confidence":"high"},"flavor":{"value":"Pink Lily","confidence":"high"},"size":{"value":"","confidence":"low"},"price":{"value":"","confidence":"low"},"pack_count":1,"category":"Personal Care","panel":"front"}
+PROMINENT: Saffola, Oats | SECONDARY: Creamy Oats | SMALL_PRINT: India's #1 Oats Brand, 100% Natural | PANEL: front
+-> {"brand":{"value":"Saffola","confidence":"high"},"name":{"value":"Oats","confidence":"high"},"flavor":{"value":"Creamy","confidence":"medium"},"size":{"value":"","confidence":"low"},"price":{"value":"","confidence":"low"},"pack_count":1,"category":"Pantry","panel":"front"}
+PROMINENT: nycil | SECONDARY: GERM EXPERT, Cool Herbal, PRICKLY HEAT POWDER | SMALL_PRINT: FREE 60 g, Rs.75 | PANEL: front
+-> {"brand":{"value":"Nycil","confidence":"high"},"name":{"value":"Prickly Heat Powder","confidence":"high"},"flavor":{"value":"Cool Herbal","confidence":"high"},"size":{"value":"","confidence":"low"},"price":{"value":"","confidence":"low"},"pack_count":1,"category":"Personal Care","panel":"front"}
+SMALL_PRINT: COMPOSITION ... Marico ... Net Qty 39 g ... NUTRITIONAL INFORMATION ... | PANEL: back
+-> {"brand":{"value":"","confidence":"low"},"name":{"value":"","confidence":"low"},"flavor":{"value":"","confidence":"low"},"size":{"value":"39 g","confidence":"high"},"price":{"value":"","confidence":"low"},"pack_count":1,"category":"Pantry","panel":"back"}`;
+
+export type Confidence = 'high' | 'medium' | 'low';
 export interface LabelFields {
     brand: string;
     name: string;
     flavor: string;
+    size: string;
+    price: string;
+    category: string;
+    packCount: number;
+    panel: 'front' | 'back';
+    confidence: { brand: Confidence; name: Confidence; flavor: Confidence; size: Confidence };
 }
 
 const USER_MSG = (text: string) => `OCR text:\n${text}\n\nReturn the JSON.`;
@@ -92,10 +128,11 @@ async function groqContent(text: string): Promise<string | null> {
                 response_format: { type: 'json_object' },
                 temperature: 0,
                 // gpt-oss is a reasoning model: it spends tokens on a hidden
-                // reasoning channel, so a tight 120 budget returns empty JSON
-                // (json_validate_failed). Give headroom + cap reasoning to "low".
-                // Harmless for non-reasoning models (llama stops early, ignores it).
-                max_tokens: 512,
+                // reasoning channel, so a tight budget returns empty JSON
+                // (json_validate_failed). 700 covers reasoning + the richer
+                // multi-field object. Cap reasoning to "low". Harmless for
+                // non-reasoning models (llama stops early, ignores it).
+                max_tokens: 700,
                 ...(GROQ_MODEL.includes('gpt-oss') ? { reasoning_effort: 'low' } : {}),
                 messages: [
                     { role: 'system', content: SYSTEM },
@@ -104,11 +141,17 @@ async function groqContent(text: string): Promise<string | null> {
             }),
             signal: AbortSignal.timeout(8_000),
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+            // Surface, don't swallow: a dead key (401) or rate-limit (429) was
+            // invisible for days. One line in the logs makes it obvious.
+            console.warn(`[structurer] Groq ${GROQ_MODEL} HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 120)}`);
+            return null;
+        }
         const data = await res.json();
         const raw = data?.choices?.[0]?.message?.content;
         return typeof raw === 'string' ? raw : null;
-    } catch {
+    } catch (e) {
+        console.warn(`[structurer] Groq request failed: ${(e as Error).message}`);
         return null;
     }
 }
@@ -128,15 +171,19 @@ async function ollamaContent(text: string): Promise<string | null> {
                     { role: 'system', content: SYSTEM },
                     { role: 'user', content: USER_MSG(text) },
                 ],
-                options: { temperature: 0, num_predict: 120, num_ctx: 2048 },
+                options: { temperature: 0, num_predict: 512, num_ctx: 2048 },
             }),
             signal: AbortSignal.timeout(20_000),
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+            console.warn(`[structurer] Ollama ${MODEL} HTTP ${res.status}`);
+            return null;
+        }
         const data = await res.json();
         const raw = data?.message?.content;
         return typeof raw === 'string' ? raw : null;
-    } catch {
+    } catch (e) {
+        console.warn(`[structurer] Ollama request failed: ${(e as Error).message}`);
         return null;
     }
 }
@@ -145,31 +192,65 @@ export async function structureLabel(text: string): Promise<LabelFields | null> 
     if (!text.trim() || !ENABLED) return null;
     try {
         const raw = (await groqContent(text)) ?? (await ollamaContent(text));
-        if (!raw) return null;
+        if (!raw) {
+            console.warn('[structurer] no structurer available (Groq + Ollama both failed) — falling back to regex parse');
+            return null;
+        }
         const match = raw.match(/\{[\s\S]*\}/);
         if (!match) return null;
         const obj = JSON.parse(match[0]);
-        const s = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
-        // Anti-hallucination: brand and flavor MUST be printed on the label, so
-        // drop any value whose words aren't in the OCR text (the 0.5b invents
-        // brands like "Swing" / flavors like "Olive Oil" not on the pack).
+
+        // Each field may be {value,confidence} (new contract) or a bare string
+        // (be liberal in what we accept). Pull both shapes.
+        const val = (f: unknown): string => {
+            if (f && typeof f === 'object' && 'value' in (f as any)) return String((f as any).value ?? '').trim();
+            return typeof f === 'string' ? f.trim() : '';
+        };
+        const conf = (f: unknown): Confidence => {
+            const c = f && typeof f === 'object' ? (f as any).confidence : undefined;
+            return c === 'high' || c === 'low' ? c : 'medium';
+        };
+
+        // Grounding is now WARN, not DELETE: with the 120B hallucination is rare,
+        // and hard-dropping cost recall whenever OCR garbled a letter. So we keep
+        // the model's value but downgrade confidence to 'low' when its words
+        // aren't in the OCR text — the UI flags low-confidence fields for review.
         const norm = (v: string) => ` ${v.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
         const hay = norm(text);
-        const grounded = (v: string) => {
+        const isGrounded = (v: string, allowType = false) => {
             const words = norm(v).trim().split(' ').filter((w) => w.length >= 2);
-            return words.length && words.every((w) => hay.includes(w)) ? v : '';
+            return words.length > 0 && words.every((w) => hay.includes(w) || (allowType && TYPE_WORDS.has(w)));
         };
-        // NAME may infer a product TYPE the label only implies ("Juice" for a
-        // SWING front), so a name word is allowed if it's on the label OR a known
-        // generic product type. This blocks fabrication ("Foggy Juice" from
-        // "PARADISE FOGG") while keeping legitimate type inference.
-        const groundedName = (v: string) => {
-            const words = norm(v).trim().split(' ').filter((w) => w.length >= 2);
-            return words.length && words.every((w) => hay.includes(w) || TYPE_WORDS.has(w)) ? v : '';
+        const downgradeIfUngrounded = (v: string, c: Confidence, allowType = false): Confidence =>
+            v && !isGrounded(v, allowType) ? 'low' : c;
+
+        let brand = val(obj.brand);
+        let name = val(obj.name);
+        const flavor = val(obj.flavor);
+        const panel: 'front' | 'back' = obj.panel === 'back' ? 'back' : 'front';
+
+        // Back panel: identity is never reliable here (it's nutrition/legal text).
+        // Force it empty so a "Marketed by Marico" never becomes the brand.
+        if (panel === 'back') { brand = ''; name = ''; }
+
+        const fields: LabelFields = {
+            brand,
+            name,
+            flavor,
+            size: val(obj.size),
+            price: val(obj.price),
+            category: normalizeCategory(obj.category),
+            packCount: Number.isFinite(obj.pack_count) && obj.pack_count > 0 ? Math.round(obj.pack_count) : 1,
+            panel,
+            confidence: {
+                brand: downgradeIfUngrounded(brand, conf(obj.brand)),
+                name: downgradeIfUngrounded(name, conf(obj.name), true),
+                flavor: downgradeIfUngrounded(flavor, conf(obj.flavor)),
+                size: conf(obj.size),
+            },
         };
-        const fields = { brand: grounded(s(obj.brand)), name: groundedName(s(obj.name)), flavor: grounded(s(obj.flavor)) };
-        // Need at least a brand or a name to be worth using.
-        return fields.brand || fields.name ? fields : null;
+        // Worth using if it produced any identity or a useful attribute.
+        return fields.brand || fields.name || fields.size || fields.category !== 'Other' ? fields : null;
     } catch {
         return null;
     }

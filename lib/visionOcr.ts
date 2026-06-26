@@ -76,11 +76,15 @@ export async function readLabelText(image: ArrayBuffer, mode: 'full' | 'back' = 
             // returns in seconds.
             signal: AbortSignal.timeout(60_000),
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+            console.warn(`[reader] VLM HTTP ${res.status} (mode=${mode}) — falling back to OCR sidecar`);
+            return null;
+        }
         const data = await res.json();
         const text = data?.choices?.[0]?.message?.content;
         return typeof text === 'string' && text.trim() ? text.trim() : null;
-    } catch {
+    } catch (e) {
+        console.warn(`[reader] VLM request failed (mode=${mode}): ${(e as Error).message} — falling back to OCR sidecar`);
         return null;
     }
 }

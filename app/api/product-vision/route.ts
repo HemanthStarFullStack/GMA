@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { parseLabel, type OcrItem } from '@/lib/parseLabel';
 import { readLabelText, readBackFields } from '@/lib/visionOcr';
-import { structureLabel, GROQ_ENABLED } from '@/lib/labelStructure';
+import { structureLabel, GROQ_ENABLED, type LabelFields } from '@/lib/labelStructure';
 
 /**
  * Label OCR: client posts a product photo. We read the label with the best
@@ -97,6 +97,8 @@ export async function POST(request: Request) {
         // gate only when Groq is unavailable. Front only; price/qty/back stay with
         // the deterministic regex. Fail-soft: LLM down → keep regex guesses.
         let structured = false;
+        let category = '';
+        let confidence: LabelFields['confidence'] | undefined;
         if (!parsed.backPanel && (GROQ_ENABLED || !parsed.confident)) {
             const fields = await structureLabel(parsed.rawText);
             if (fields) {
@@ -108,6 +110,12 @@ export async function POST(request: Request) {
                 if (fields.brand) parsed.brand = fields.brand;
                 if (fields.name) parsed.name = fields.name;
                 if (!parsed.flavor) parsed.flavor = fields.flavor;
+                // Category from the structurer seeds the form so the duration
+                // predictor refines a real guess instead of starting at "Other".
+                // Size stays with the regex on fronts (the LLM grabs promos like
+                // "50 g EXTRA" / hallucinates a size); the back-scan path owns size.
+                category = fields.category;
+                confidence = fields.confidence;
             }
         }
 
@@ -115,7 +123,7 @@ export async function POST(request: Request) {
         // the parsed fields — makes misreads debuggable from logs.
         console.log('[vision]', JSON.stringify({
             reader, structured, raw: parsed.rawText, name: parsed.name, brand: parsed.brand,
-            flavor: parsed.flavor, quantity: parsed.quantity, price: parsed.price, backPanel: parsed.backPanel,
+            flavor: parsed.flavor, quantity: parsed.quantity, price: parsed.price, category, backPanel: parsed.backPanel,
         }));
 
         // On a back/nutrition panel the brand and product name aren't present
@@ -127,7 +135,7 @@ export async function POST(request: Request) {
             parsed.brand = '';
         }
 
-        return NextResponse.json({ success: isUsable(parsed), data: parsed });
+        return NextResponse.json({ success: isUsable(parsed), data: { ...parsed, category, confidence } });
     } catch (err: any) {
         console.warn('product-vision error:', err?.message || err);
         return NextResponse.json({ success: false, message: 'OCR service unavailable' }, { status: 503 });
