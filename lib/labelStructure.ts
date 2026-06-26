@@ -26,7 +26,7 @@ const ENABLED = process.env.LABEL_LLM_ENABLED !== 'false';
 // GPU. Free tier renews daily (no finite credit pool) so it won't permanently
 // dry up. Empty key -> skip straight to the local Ollama fallback.
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
 // True when Groq is the active primary. The caller uses this to decide whether
 // to structure even a "confident" parse: the old 0.5b/1.5b local model swapped
@@ -91,7 +91,12 @@ async function groqContent(text: string): Promise<string | null> {
                 model: GROQ_MODEL,
                 response_format: { type: 'json_object' },
                 temperature: 0,
-                max_tokens: 120,
+                // gpt-oss is a reasoning model: it spends tokens on a hidden
+                // reasoning channel, so a tight 120 budget returns empty JSON
+                // (json_validate_failed). Give headroom + cap reasoning to "low".
+                // Harmless for non-reasoning models (llama stops early, ignores it).
+                max_tokens: 512,
+                ...(GROQ_MODEL.includes('gpt-oss') ? { reasoning_effort: 'low' } : {}),
                 messages: [
                     { role: 'system', content: SYSTEM },
                     { role: 'user', content: USER_MSG(text) },
