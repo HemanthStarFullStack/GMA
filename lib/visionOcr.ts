@@ -142,11 +142,18 @@ export async function readLabelText(image: ArrayBuffer, mode: 'full' | 'back' = 
  * (price always '' — see BACK_PROMPT) with quantity copied verbatim from the pack,
  * or '' when none is printed. Returns null only if the reader was unreachable.
  */
+// A real net quantity is a number + unit, short. The 2B sometimes ignores the
+// "output only the value" instruction and returns a whole composition/marketing
+// paragraph that happens to contain a digit — reject anything that isn't clearly
+// size-shaped so a paragraph never becomes the size (it did: Evian/Germ stored a
+// 115-char blurb as their unit). Mirrors the client looksLikeSize guard.
+const SIZE_SHAPE = /\b\d+(?:[.,]\d+)?\s?(ml|l|ltr|litre|liter|cl|kg|g|gm|gms|gram|grams|mg|pcs?|pieces?|x|n|units?|caps?|capsules?|tablets?|sachets?)\b/i;
+
 export async function readBackFields(image: ArrayBuffer): Promise<{ quantity: string; price: string } | null> {
     const raw = await readLabelText(image, 'back');
     if (raw == null) return null;
     let quantity = raw.trim().replace(/^["']|["']$/g, '').trim();
-    // "NONE" or anything without a digit isn't a real quantity.
-    if (/^none$/i.test(quantity) || !/\d/.test(quantity)) quantity = '';
+    // Accept only a short, size-shaped value; "NONE", prose, or a paragraph → ''.
+    if (quantity.length > 24 || !SIZE_SHAPE.test(quantity)) quantity = '';
     return { quantity, price: '' };
 }

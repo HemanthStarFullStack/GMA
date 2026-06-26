@@ -66,7 +66,9 @@ export async function POST(request: Request) {
             if (d.price !== undefined) set.price = (d.price ?? '').toString();
             if (d.category) set.category = d.category;
             if (d.imageUrl !== undefined) set.imageUrl = d.imageUrl || null;
-            if (d.unit) set.defaultUnit = d.unit;
+            // Size is short ("500 g", "pack of 6"). Cap it so a stray OCR paragraph
+            // can never be stored as the unit (Evian once saved a 117-char blurb).
+            if (d.unit) set.defaultUnit = String(d.unit).trim().slice(0, 24);
             if (d.averageDuration) set.averageDuration = Number(d.averageDuration) || 14;
             if (d.perPersonDailyRate) set.perPersonDailyRate = Number(d.perPersonDailyRate);
 

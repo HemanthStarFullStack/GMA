@@ -199,7 +199,6 @@ export default function PhotoCapture({ onCapture, onManual, onError }: PhotoCapt
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                capture="environment"
                 className="hidden"
                 onChange={(e) => onFile(e.target.files?.[0])}
             />
