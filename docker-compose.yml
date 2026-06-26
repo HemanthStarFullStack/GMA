@@ -8,6 +8,13 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    # Load secrets straight from .env into the container. This is the source of
+    # truth for GROQ_API_KEY et al — do NOT also list them under `environment`
+    # with ${...} shell substitution, or a stale shell/session value silently
+    # shadows .env and a recreate re-bakes a dead key (happened: old key kept
+    # resurrecting on every restart). env_file reads the FILE, never the shell.
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
       # App talks to the mongodb service over the compose network.
@@ -30,10 +37,10 @@ services:
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
       LOCAL_LLM_ENABLED: ${LOCAL_LLM_ENABLED:-true}
       # Small LLM that structures OCR text into brand/name/flavor (label parser).
-      # Primary = Groq (free, fast, llama-3.3-70b); falls back to the local
-      # Ollama struct model below if no key / rate-limited / unreachable.
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
-      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      # Primary = Groq (free, fast, gpt-oss-120b); falls back to the local Ollama
+      # struct model below if no key / rate-limited / unreachable.
+      # GROQ_API_KEY + GROQ_MODEL come from env_file (.env) above — intentionally
+      # NOT redeclared here, so a stale shell ${GROQ_API_KEY} can't shadow them.
       OLLAMA_STRUCT_MODEL: ${OLLAMA_STRUCT_MODEL:-qwen2.5:1.5b}
       LABEL_LLM_ENABLED: ${LABEL_LLM_ENABLED:-true}
     extra_hosts:
