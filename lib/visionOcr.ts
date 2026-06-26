@@ -17,6 +17,47 @@
 const VISION_OCR_URL = process.env.VISION_OCR_URL || '';
 const ENABLED = !!VISION_OCR_URL && process.env.VISION_OCR_ENABLED !== 'false';
 
+// Front reader: Gemini flash reads labels ~10x faster than the local 2B VLM
+// (~2-4s vs 25-40s) and scored brand/name 100% vs 93/71% in the 35-scan eval,
+// while freeing the local GPU during scans. Local VLM + CPU sidecar stay as the
+// fallback chain so a Gemini outage never dead-ends a scan. Back-panel reads keep
+// the local targeted reader (it beat Gemini there and is already fast).
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
+const FRONT_READER = process.env.FRONT_READER || (GEMINI_KEY ? 'gemini' : 'local');
+// flash first (stronger OCR); flash-lite is spillover (and prod's predictor
+// already burns its quota), each model a separate free-tier bucket.
+const GEMINI_READ_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+
+async function geminiReadFull(b64: string): Promise<string | null> {
+    if (!GEMINI_KEY) return null;
+    const body = {
+        contents: [{ role: 'user', parts: [
+            { text: FULL_PROMPT },
+            { inline_data: { mime_type: 'image/jpeg', data: b64 } },
+        ] }],
+        // thinkingBudget 0: no extended thinking (it eats the output budget and
+        // returns empty content with finishReason MAX_TOKENS on 2.5 models).
+        generationConfig: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
+    };
+    for (const model of GEMINI_READ_MODELS) {
+        try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
+                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) });
+            if (!res.ok) {
+                if (res.status === 429) continue; // quota — spill to next model
+                console.warn(`[reader] Gemini ${model} HTTP ${res.status} — falling back to local VLM`);
+                return null;
+            }
+            const d = await res.json();
+            const t = d?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (typeof t === 'string' && t.trim()) return t.trim();
+        } catch (e) {
+            console.warn(`[reader] Gemini ${model} failed: ${(e as Error).message} — falling back to local VLM`);
+        }
+    }
+    return null;
+}
+
 // Cheap reachability probe so a stopped server never blocks a scan for long.
 let lastProbe = { at: 0, ok: false };
 async function reachable(): Promise<boolean> {
@@ -50,9 +91,16 @@ const BACK_PROMPT =
  * Returns the raw model text, or null if the reader is unavailable/empty.
  */
 export async function readLabelText(image: ArrayBuffer, mode: 'full' | 'back' = 'full'): Promise<string | null> {
+    const b64 = Buffer.from(image).toString('base64');
+    // Front: cloud reader first (fast, frees the GPU). On miss fall through to the
+    // local VLM below; if that's down too the caller drops to the CPU sidecar.
+    if (mode === 'full' && FRONT_READER === 'gemini') {
+        const g = await geminiReadFull(b64);
+        if (g) return g;
+        console.warn('[reader] Gemini returned nothing — trying local VLM');
+    }
     if (!(await reachable())) return null;
     try {
-        const b64 = Buffer.from(image).toString('base64');
         const res = await fetch(`${VISION_OCR_URL}/v1/chat/completions`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },

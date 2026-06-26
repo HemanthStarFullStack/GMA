@@ -13,6 +13,12 @@ import fs from 'fs';
 const VLM = process.env.VISION_OCR_URL;
 const GK = process.env.GROQ_API_KEY;
 const GM = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+const GEMK = process.env.GEMINI_API_KEY;
+// Reader can be the local Qwen VLM (default) or Gemini (EVAL_READER=gemini) — A/B
+// which transcribes labels better. Gemini walks flash-lite→flash (separate quotas).
+// flash first: it's the stronger OCR model, and prod's duration-predictor already
+// burns the flash-lite quota — flash-lite stays as spillover only.
+const GEM_READ_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
 // --- which variant: "baseline" (current prod prompts) or "v2" (new zoned) ---
 // Reader and structurer can be mixed independently to isolate which change helps.
@@ -86,6 +92,31 @@ async function vlmRead(b64) {
   const t = d?.choices?.[0]?.message?.content;
   return typeof t === 'string' && t.trim() ? t.trim() : null;
 }
+
+// Gemini reader: same "transcribe everything" task as the local VLM, so the
+// structurer + grounding downstream are unchanged — only the OCR source differs.
+async function geminiRead(b64) {
+  const body = {
+    contents: [{ role: 'user', parts: [
+      { text: READER_PROMPT || 'Recognize all the text in the image.' },
+      { inline_data: { mime_type: 'image/jpeg', data: b64 } },
+    ] }],
+    generationConfig: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
+  };
+  for (const model of GEM_READ_MODELS) {
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMK}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
+      if (!r.ok) { if (r.status === 429) continue; return null; }
+      const d = await r.json();
+      const t = d?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (typeof t === 'string' && t.trim()) return t.trim();
+    } catch { /* spill to next model */ }
+  }
+  return null;
+}
+
+const readImage = (process.env.EVAL_READER === 'gemini') ? geminiRead : vlmRead;
 
 async function structure(raw) {
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', { method:'POST',
@@ -165,7 +196,7 @@ for (const [file, prodKey] of entries) {
 
   const b64 = fs.readFileSync(path).toString('base64');
   let raw = null, out = {}, err = null;
-  try { raw = await vlmRead(b64); } catch (e) { err = 'VLM:' + e.message; }
+  try { raw = await readImage(b64); } catch (e) { err = 'READ:' + e.message; }
   if (raw) { try { out = applyGrounding(await structure(raw), raw); } catch (e) { err = 'GROQ:' + e.message; } }
   if (out._http || out._nojson || out._badjson) err = 'STRUCT:' + JSON.stringify(out);
 
