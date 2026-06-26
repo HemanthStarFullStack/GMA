@@ -124,14 +124,24 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
 
     const result: ProductForecast[] = Array.from(map.values()).map((product) => {
         const h = product.consumptionHistory;
+        const sumDurations = h.averageDurationDays; // accumulated sum, pre-average
+        const catalogueAvg = productMap.get(product.productId)?.averageDuration || 0;
         if (h.timesConsumed > 0) {
-            h.averageDurationDays = Math.round(h.averageDurationDays / h.timesConsumed);
+            h.averageDurationDays = Math.round(sumDurations / h.timesConsumed);
         }
 
-        // Fall back to the catalogue's averageDuration if there's stock but no logs yet.
-        let avgDuration = h.averageDurationDays;
-        if (product.status === 'in_stock' && avgDuration <= 0) {
-            avgDuration = productMap.get(product.productId)?.averageDuration || 0;
+        // Effective duration driving the run-out projection. Blend the AI catalogue
+        // estimate (a prior worth ~3 observations) with logged history so a single
+        // premature log — e.g. the first ±stepper decrement, durationDays≈1, which
+        // measures purchase→first-use rather than the real cadence — can't wipe out
+        // a 60-day estimate. Several real logs outweigh the prior and take over.
+        let avgDuration: number;
+        if (h.timesConsumed > 0 && catalogueAvg > 0) {
+            avgDuration = Math.round((catalogueAvg * 3 + sumDurations) / (3 + h.timesConsumed));
+        } else if (h.timesConsumed > 0) {
+            avgDuration = h.averageDurationDays;
+        } else {
+            avgDuration = catalogueAvg;
         }
 
         if (product.status === 'in_stock' && avgDuration > 0) {
