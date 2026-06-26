@@ -77,7 +77,7 @@ Return ONLY this JSON, nothing else:
 
 Field rules:
 - brand = manufacturer/brand from the most PROMINENT text (Pond's, Saffola, Storia, Fogg). Use only words present in the text.
-- name = the product TYPE, e.g. "Talcum Powder","Oats","Juice","Body Spray","Face Wash","Biscuit","Muesli","Cream". You MAY infer the obvious type even if not printed verbatim.
+- name = the product TYPE only, SHORT (1-3 words), e.g. "Talcum Powder","Oats","Juice","Body Spray","Face Wash","Biscuit","Muesli","Cream","Mineral Water". NEVER a tagline, slogan or hero line ("From the French Alps","The Taste of Wellness") — those are marketing, not the name. You MAY infer the obvious type even if not printed verbatim.
 - flavor = variant/scent/sub-line (Pink Lily, Pomegranate, Cool Herbal, Paradise, Dark Chocolate + Cranberry). "" if none. Use only printed words.
 - size = the declared NET quantity ONLY, normalized "500 g","1 L","250 ml". "" if not clearly printed. NEVER a promo ("50 g EXTRA","9g Extra"), per-serving, or nutrition number.
 - price = MRP only as "₹<n>". "" if not printed.
@@ -98,6 +98,8 @@ PROMINENT: POND'S | SECONDARY: DREAMFLOWER, fragrant talcum powder, PINK LILY | 
 -> {"brand":{"value":"Pond's","confidence":"high"},"name":{"value":"Talcum Powder","confidence":"high"},"flavor":{"value":"Pink Lily","confidence":"high"},"size":{"value":"","confidence":"low"},"price":{"value":"","confidence":"low"},"pack_count":1,"category":"Personal Care","panel":"front"}
 PROMINENT: Saffola, Oats | SECONDARY: Creamy Oats | SMALL_PRINT: India's #1 Oats Brand, 100% Natural | PANEL: front
 -> {"brand":{"value":"Saffola","confidence":"high"},"name":{"value":"Oats","confidence":"high"},"flavor":{"value":"Creamy","confidence":"medium"},"size":{"value":"","confidence":"low"},"price":{"value":"","confidence":"low"},"pack_count":1,"category":"Pantry","panel":"front"}
+PROMINENT: evian | SECONDARY: Natural Mineral Water | SMALL_PRINT: From the French Alps, Des Alpes Françaises | PANEL: front
+-> {"brand":{"value":"evian","confidence":"high"},"name":{"value":"Mineral Water","confidence":"high"},"flavor":{"value":"","confidence":"low"},"size":{"value":"","confidence":"low"},"price":{"value":"","confidence":"low"},"pack_count":1,"category":"Beverages","panel":"front"}
 PROMINENT: nycil | SECONDARY: GERM EXPERT, Cool Herbal, PRICKLY HEAT POWDER | SMALL_PRINT: FREE 60 g, Rs.75 | PANEL: front
 -> {"brand":{"value":"Nycil","confidence":"high"},"name":{"value":"Prickly Heat Powder","confidence":"high"},"flavor":{"value":"Cool Herbal","confidence":"high"},"size":{"value":"","confidence":"low"},"price":{"value":"","confidence":"low"},"pack_count":1,"category":"Personal Care","panel":"front"}
 SMALL_PRINT: COMPOSITION ... Marico ... Net Qty 39 g ... NUTRITIONAL INFORMATION ... | PANEL: back
@@ -243,7 +245,14 @@ export async function structureLabel(text: string): Promise<LabelFields | null> 
         // Final per-field confidence: the model's own, downgraded to 'low' when
         // the value isn't grounded in the OCR text.
         const cBrand = downgradeIfUngrounded(brand, conf(obj.brand));
-        const cName = downgradeIfUngrounded(name, conf(obj.name), true);
+        // A product TYPE is short (1-4 words). A long "name" is the model grabbing
+        // a tagline/hero line ("From the French Alps...") — reject it (→ blanked).
+        const isTypeName = (v: string) => {
+            const words = v.trim().split(/\s+/).filter(Boolean);
+            return words.length >= 1 && words.length <= 4 && v.length <= 32;
+        };
+        let cName = downgradeIfUngrounded(name, conf(obj.name), true);
+        if (name && !isTypeName(name)) cName = 'low';
         const cFlavor = downgradeIfUngrounded(flavor, conf(obj.flavor));
         const cSize = conf(obj.size);
         const cPrice = conf(obj.price);
