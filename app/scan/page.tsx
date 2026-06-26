@@ -25,6 +25,7 @@ type Form = {
     unit: string;
     quantity: number;
     averageDuration: number | ""; // "" while the field is being edited/cleared
+    perPersonDailyRate?: number; // units/person/day from the predictor — drives forecast re-scaling
     imageUrl: string | null;
     source: string;
     addedBy: "barcode" | "manual";
@@ -156,7 +157,7 @@ export default function ScanPage() {
             });
             const data = await res.json();
             if (data.success) {
-                setForm((f) => ({ ...f, averageDuration: data.data.averageDuration, category: data.data.category || f.category }));
+                setForm((f) => ({ ...f, averageDuration: data.data.averageDuration, perPersonDailyRate: data.data.perPersonDailyRate, category: data.data.category || f.category }));
             }
         } catch { /* keep defaults; user can Re-estimate */ } finally {
             setReestimating(false);
@@ -181,7 +182,7 @@ export default function ScanPage() {
             });
             const data = await res.json();
             if (data.success) {
-                setForm((f) => ({ ...f, averageDuration: data.data.averageDuration, category: data.data.category || f.category }));
+                setForm((f) => ({ ...f, averageDuration: data.data.averageDuration, perPersonDailyRate: data.data.perPersonDailyRate, category: data.data.category || f.category }));
                 setToast(`Updated estimate: ~${data.data.averageDuration} days`);
             } else {
                 setToast("Couldn't re-estimate — set it manually.");
@@ -268,7 +269,7 @@ export default function ScanPage() {
                     });
                     const pj = await pr.json();
                     if (pj.success) {
-                        setForm((f) => ({ ...f, averageDuration: pj.data.averageDuration, category: pj.data.category || f.category }));
+                        setForm((f) => ({ ...f, averageDuration: pj.data.averageDuration, perPersonDailyRate: pj.data.perPersonDailyRate, category: pj.data.category || f.category }));
                         setToast(`Back read — ${parts} filled in. Estimate updated: ~${pj.data.averageDuration} days`);
                         return;
                     }
@@ -314,6 +315,7 @@ export default function ScanPage() {
                         imageUrl: form.imageUrl,
                         unit: form.unit,
                         averageDuration: Number(form.averageDuration) || 14,
+                        ...(form.perPersonDailyRate ? { perPersonDailyRate: form.perPersonDailyRate } : {}),
                         addedBy: form.addedBy,
                         source: form.source,
                     },
