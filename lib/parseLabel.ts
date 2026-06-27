@@ -85,6 +85,10 @@ function onSameLine(a: OcrItem, b: OcrItem): boolean {
 function extractQuantity(items: OcrItem[], rawText: string): string {
     // Nutrient amounts ("OMEGA-3 (0.6 g)", "Protein 5 g") are not the pack size.
     const NUTRIENT = /(omega|protein|fibre|fiber|fat|carb|sugar|sodium|potass|calcium|iron|energy|vitamin|cholesterol)\s*\S{0,6}$/i;
+    // ...and the unit can also PRECEDE the nutrient word — a front-of-pack
+    // marketing claim like "30g PROTEIN" / "8 g FIBRE" puts the number first
+    // (Pintola's pack reads net qty as its big "30g PROTEIN" hero claim).
+    const NUTRIENT_AFTER = /^\s*\)?\s*(omega|protein|fibre|fiber|fat|carbs?|carbohydrate|sugars?|sodium|potass|calcium|iron|energy|vitamin|cholesterol|kcal|cals?)\b/i;
 
     // The declared net quantity is authoritative — check it FIRST, before any
     // scattered number (a back panel is full of nutrient amounts that would
@@ -112,7 +116,8 @@ function extractQuantity(items: OcrItem[], rawText: string): string {
         if (items.some((o) => /\bper\b/i.test(o.text) && onSameLine(o, it) && o.x < it.x && it.x - o.x < 220)) score -= 6;
         if (/^(ml|cl|l)$/i.test(UNIT_CANON[m[2].toLowerCase()] ?? m[2]) && /(water|cup|pour|cook|boil|flame)/i.test(low)) score -= 8;
         if (/\bextra\b/i.test(low)) score -= 8; // promo badge ("50 g EXTRA"), not net qty
-        if (NUTRIENT.test(low.slice(0, m.index)) || /\(\s*$/.test(it.text.slice(0, m.index))) score -= 12; // nutrient amount
+        if (NUTRIENT.test(low.slice(0, m.index)) || /\(\s*$/.test(it.text.slice(0, m.index))) score -= 12; // nutrient amount ("Protein 5 g")
+        if (NUTRIENT_AFTER.test(it.text.slice((m.index ?? 0) + m[0].length))) score -= 12; // front claim ("30g PROTEIN")
         const cu = UNIT_CANON[m[2].toLowerCase()];
         if ((cu === "g" || cu === "ml") && parseFloat(m[1].replace(",", ".")) < 5) score -= 6; // implausibly small for a pack
         cands.push({ num: m[1], unit: m[2], score, h: it.h });
@@ -128,10 +133,11 @@ function extractQuantity(items: OcrItem[], rawText: string): string {
     QTY_G.lastIndex = 0;
     while ((m = QTY_G.exec(rawText))) {
         const before = rawText.slice(Math.max(0, m.index - 14), m.index).toLowerCase();
-        const after = rawText.slice(m.index + m[0].length, m.index + m[0].length + 10).toLowerCase();
+        const after = rawText.slice(m.index + m[0].length, m.index + m[0].length + 16).toLowerCase();
         if (/per\s*$/.test(before)) continue;
         if (/\bextra\b/.test(after)) continue; // promo badge
-        if (NUTRIENT.test(before)) continue;   // nutrition value, not pack size
+        if (NUTRIENT.test(before)) continue;   // nutrition value, not pack size ("Protein 5 g")
+        if (NUTRIENT_AFTER.test(after)) continue; // front claim ("30g PROTEIN")
         if (/\($/.test(before.trim())) continue; // "(0.6 g)" parenthetical = nutrition
         // Implausibly small for a pack net weight/volume — usually a nutrient amount.
         const cu = UNIT_CANON[m[2].toLowerCase()];
