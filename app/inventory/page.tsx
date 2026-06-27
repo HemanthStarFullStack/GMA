@@ -53,6 +53,7 @@ export default function InventoryPage() {
     const [loading, setLoading] = useState(true);
     const [familySize, setFamilySize] = useState(1);
     const [pendingDelete, setPendingDelete] = useState<InventoryItem | null>(null);
+    const [toast, setToast] = useState<string | null>(null);
     const [query, setQuery] = useState("");
     const [sortBy, setSortBy] = useState<SortBy>("recent");
     const [section, setSection] = useState<string>("all");
@@ -148,6 +149,11 @@ export default function InventoryPage() {
                 body: JSON.stringify({ id, delta }),
             });
             if (res.status === 409) {
+                // The stepper hit the floor — this is the last pack. Fall through to
+                // the consume flow automatically, but tell the user so it's not a
+                // silent disappearance.
+                setToast("Last pack — marking as consumed");
+                setTimeout(() => setToast(null), 2500);
                 handleConsume(id);
                 return;
             }
@@ -284,6 +290,12 @@ export default function InventoryPage() {
                     </>
                 )}
             </main>
+
+            {toast && (
+                <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-ink text-paper rounded-xl shadow-lg text-sm font-medium pointer-events-none">
+                    {toast}
+                </div>
+            )}
 
             {pendingDelete && (
                 <div

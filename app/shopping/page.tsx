@@ -14,7 +14,7 @@ interface ListItem {
     unit: string | null;
     reason: "low_stock" | "out_of_stock" | "manual";
     source: "auto" | "manual";
-    status: "pending" | "done";
+    status: "pending" | "done" | "dismissed";
     restockQty: number;
     boughtAt: string | null;
 }
@@ -32,6 +32,7 @@ export default function ShoppingPage() {
     const [name, setName] = useState("");
     const [adding, setAdding] = useState(false);
     const [showDone, setShowDone] = useState(false);
+    const [showDismissed, setShowDismissed] = useState(false);
     // Per-item rebuy quantity the user can dial before ticking "Got it". Falls
     // back to the suggested restockQty until they touch it; their edits survive
     // list refreshes.
@@ -107,6 +108,7 @@ export default function ShoppingPage() {
 
     const pending = items.filter((i) => i.status === "pending");
     const done = items.filter((i) => i.status === "done");
+    const dismissed = items.filter((i) => i.status === "dismissed");
 
     return (
         <div className="min-h-screen">
@@ -144,7 +146,7 @@ export default function ShoppingPage() {
 
                 {loading ? (
                     <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-terracotta" /></div>
-                ) : pending.length === 0 && done.length === 0 ? (
+                ) : pending.length === 0 && done.length === 0 && dismissed.length === 0 ? (
                     <div className="text-center py-16 rise">
                         <div className="w-16 h-16 bg-paper-2 border border-line rounded-full flex items-center justify-center mx-auto mb-4">
                             <ShoppingCart className="w-8 h-8 text-ink-faint" />
@@ -264,6 +266,41 @@ export default function ShoppingPage() {
                                                             <Trash2 className="w-4 h-4" />
                                                         </button>
                                                     )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {dismissed.length > 0 && (
+                            <div className="mt-6">
+                                <button
+                                    onClick={() => setShowDismissed((v) => !v)}
+                                    className="flex items-center gap-2 text-sm font-semibold text-ink-faint hover:text-ink-soft mb-3"
+                                >
+                                    {showDismissed ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                    Dismissed · {dismissed.length}
+                                </button>
+                                {showDismissed && (
+                                    <div className="space-y-2">
+                                        {dismissed.map((item) => {
+                                            const isBusy = busy.has(item._id);
+                                            return (
+                                                <div key={item._id} className="pantry-card flex items-center gap-3 p-3 opacity-50">
+                                                    <div className="flex-1 min-w-0">
+                                                        {item.brand && <p className="kicker truncate">{item.brand}</p>}
+                                                        <h3 className="font-semibold text-ink-soft truncate">{item.name}</h3>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => act(item._id, "uncheck")}
+                                                        disabled={isBusy}
+                                                        title="Restore to list"
+                                                        className="text-xs font-semibold text-ink-soft border border-line-strong px-3 py-1.5 rounded-full hover:text-ink hover:bg-paper-2 transition-colors disabled:opacity-50 flex-shrink-0 flex items-center gap-1.5"
+                                                    >
+                                                        {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Restore"}
+                                                    </button>
                                                 </div>
                                             );
                                         })}

@@ -75,8 +75,9 @@ export async function GET() {
         await connectDB();
         await autoSync(userId);
 
-        // Show pending + done (dismissed is hidden but kept to suppress nagging).
-        const entries = await ShoppingList.find({ userId, status: { $in: ['pending', 'done'] } }).lean();
+        // Return all statuses so the client can show a Dismissed section where
+        // the user can restore items they accidentally or prematurely dismissed.
+        const entries = await ShoppingList.find({ userId, status: { $in: ['pending', 'done', 'dismissed'] } }).lean();
 
         // Enrich auto/catalogue items with brand, image and pack size.
         const barcodes = [...new Set(entries.filter((e) => e.productId).map((e) => e.productId as string))];
@@ -116,6 +117,7 @@ export async function GET() {
                 counts: {
                     pending: items.filter((i) => i.status === 'pending').length,
                     done: items.filter((i) => i.status === 'done').length,
+                    dismissed: items.filter((i) => i.status === 'dismissed').length,
                 },
             },
         });
