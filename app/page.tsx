@@ -97,9 +97,6 @@ export default async function HomePage() {
                                 {session ? "Scan a product" : "Get started"}
                                 <ArrowRight className="w-4 h-4" />
                             </Link>
-                            <Link href="/inventory" className="btn-ghost px-5 py-3 inline-flex items-center gap-2 text-base">
-                                View inventory
-                            </Link>
                         </div>
                     </div>
 
