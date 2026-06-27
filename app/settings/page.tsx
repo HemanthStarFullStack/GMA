@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { ArrowLeft, Save, Users, Loader2, Check, User as UserIcon, Camera } from "lucide-react";
+import { Save, Users, Loader2, Check, User as UserIcon, Camera } from "lucide-react";
+import BackButton from "@/components/BackButton";
 
 export default function SettingsPage() {
     const { update } = useSession();
@@ -86,10 +86,7 @@ export default function SettingsPage() {
         <div className="min-h-screen">
             <header className="bg-paper/85 backdrop-blur border-b border-line sticky top-0 z-10">
                 <div className="container mx-auto px-5 py-4 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2 text-ink-soft hover:text-ink">
-                        <ArrowLeft className="w-5 h-5" />
-                        <span className="font-medium">Back</span>
-                    </Link>
+                    <BackButton />
                     <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">Settings</h1>
                     <div className="w-10" />
                 </div>

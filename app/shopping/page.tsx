@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import Link from "next/link";
-import { ArrowLeft, ShoppingCart, Plus, Minus, Check, X, Trash2, Loader2, Package, ChevronDown, ChevronRight } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Check, X, Trash2, Loader2, Package, ChevronDown, ChevronRight } from "lucide-react";
+import BackButton from "@/components/BackButton";
 import UserMenu from "@/components/UserMenu";
 
 interface ListItem {
@@ -112,10 +112,7 @@ export default function ShoppingPage() {
         <div className="min-h-screen">
             <header className="bg-paper/85 backdrop-blur border-b border-line sticky top-0 z-10">
                 <div className="container mx-auto px-5 py-4 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2 text-ink-soft hover:text-ink">
-                        <ArrowLeft className="w-5 h-5" />
-                        <span className="font-medium">Back</span>
-                    </Link>
+                    <BackButton />
                     <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink flex items-center gap-2">
                         <ShoppingCart className="w-5 h-5 text-terracotta" />
                         Shopping

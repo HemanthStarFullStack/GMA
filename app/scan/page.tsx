@@ -3,8 +3,8 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import PhotoCapture from "@/components/PhotoCapture";
-import { ArrowLeft, Package, CheckCircle2, Loader2, Minus, Plus, Sparkles, ImagePlus, X, ScanLine } from "lucide-react";
-import Link from "next/link";
+import { Package, CheckCircle2, Loader2, Minus, Plus, Sparkles, ImagePlus, X, ScanLine } from "lucide-react";
+import BackButton from "@/components/BackButton";
 import UserMenu from "@/components/UserMenu";
 
 const CATEGORIES = [
@@ -342,10 +342,7 @@ export default function ScanPage() {
         <div className="min-h-screen">
             <header className="border-b border-line">
                 <div className="container mx-auto px-5 py-4 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2 text-ink-soft hover:text-ink">
-                        <ArrowLeft className="w-5 h-5" />
-                        <span className="font-medium">Back</span>
-                    </Link>
+                    <BackButton />
                     <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">Add a product</h1>
                     <UserMenu />
                 </div>

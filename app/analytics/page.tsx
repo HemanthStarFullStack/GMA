@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Package, Clock, TrendingDown, Check, X, AlertTriangle, Loader2, ChevronLeft } from "lucide-react";
-import Link from "next/link";
+import { Package, Clock, TrendingDown, Check, X, AlertTriangle, Loader2, ChevronLeft } from "lucide-react";
+import BackButton from "@/components/BackButton";
 import UserMenu from "@/components/UserMenu";
 import { formatStock } from "@/lib/formatStock";
 
@@ -55,10 +55,7 @@ export default function AnalyticsPage() {
         <div className="min-h-screen">
             <header className="bg-paper/85 backdrop-blur border-b border-line sticky top-0 z-10">
                 <div className="container mx-auto px-5 py-4 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2 text-ink-soft hover:text-ink">
-                        <ArrowLeft className="w-5 h-5" />
-                        <span className="font-medium">Back</span>
-                    </Link>
+                    <BackButton />
                     <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">Analytics</h1>
                     <UserMenu />
                 </div>
