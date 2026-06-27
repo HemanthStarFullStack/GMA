@@ -51,6 +51,7 @@ export default function InventoryPage() {
     const [items, setItems] = useState<InventoryItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [familySize, setFamilySize] = useState(1);
+    const [pendingDelete, setPendingDelete] = useState<InventoryItem | null>(null);
     const [query, setQuery] = useState("");
     const [sortBy, setSortBy] = useState<SortBy>("recent");
     const [section, setSection] = useState<string>("all");
@@ -117,14 +118,22 @@ export default function InventoryPage() {
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm("Delete this item?")) return;
+    // Open the in-app confirm (no native browser confirm() dialog).
+    const handleDelete = (id: string) => {
+        const item = items.find((i) => i._id === id);
+        if (item) setPendingDelete(item);
+    };
+
+    const confirmDelete = async () => {
+        if (!pendingDelete) return;
         try {
-            const res = await fetch(`/api/inventory?id=${id}`, { method: "DELETE" });
+            const res = await fetch(`/api/inventory?id=${pendingDelete._id}`, { method: "DELETE" });
             const data = await res.json();
             if (data.success) fetchInventory();
         } catch (error) {
             console.error("Failed to delete item:", error);
+        } finally {
+            setPendingDelete(null);
         }
     };
 
@@ -277,6 +286,37 @@ export default function InventoryPage() {
                     </>
                 )}
             </main>
+
+            {pendingDelete && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+                    onClick={() => setPendingDelete(null)}
+                >
+                    <div
+                        className="w-full max-w-xs rounded-2xl bg-paper p-5 shadow-xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h3 className="text-lg font-semibold">Delete item?</h3>
+                        <p className="mt-1 text-sm text-ink-soft">
+                            Remove <span className="font-medium">{pendingDelete.product.name}</span> from your inventory.
+                        </p>
+                        <div className="mt-4 flex gap-2">
+                            <button
+                                onClick={() => setPendingDelete(null)}
+                                className="flex-1 rounded-full border border-ink/15 py-2 text-sm font-medium"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                className="flex-1 rounded-full bg-red-600 py-2 text-sm font-medium text-paper"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
