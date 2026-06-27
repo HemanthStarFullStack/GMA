@@ -189,9 +189,15 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
     return result;
 }
 
-/** True when a product is out of stock or forecast to run out within 7 days. */
+/** True when a product needs restocking. */
 export function isLow(p: ProductForecast): boolean {
-    return p.status === 'out_of_stock' || !!p.predictions?.needsRestock;
+    if (p.status === 'out_of_stock') return true;
+    if (p.predictions?.needsRestock) return true;
+    // Last pack remaining when the user's habit is to keep two or more (peakQty
+    // on the current lot). Surfaces the restock prompt before the 7-day forecast
+    // window opens — e.g. "I had 2 oats packs, I used one, remind me to restock."
+    if (p.currentStock === 1 && (p.restockQty ?? 0) >= 2) return true;
+    return false;
 }
 
 /** The subset of a user's products that need restocking. */
