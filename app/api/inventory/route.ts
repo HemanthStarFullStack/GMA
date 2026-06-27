@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
-import { Inventory, Product, ConsumptionLog } from '@/lib/models';
+import { Inventory, Product, ConsumptionLog, ShoppingList } from '@/lib/models';
 import { addToInventory } from '@/lib/inventory';
 import { auth } from '@/auth';
 import { serverError } from '@/lib/apiError';
@@ -119,6 +119,9 @@ export async function PATCH(request: Request) {
         if (!Number.isInteger(delta) || delta === 0) {
             return NextResponse.json({ success: false, message: 'delta must be a non-zero integer' }, { status: 400 });
         }
+        if (Math.abs(delta) !== 1) {
+            return NextResponse.json({ success: false, message: 'delta must be +1 or -1' }, { status: 400 });
+        }
 
         // ponytail: read-modify-write, not atomic $inc — both directions must also
         // move purchaseDate so the forecast learns the real per-unit rate. Ceiling:
@@ -192,6 +195,20 @@ export async function DELETE(request: Request) {
 
         if (!deletedItem) {
             return NextResponse.json({ success: false, message: 'Item not found or unauthorized' }, { status: 404 });
+        }
+
+        // If this was the last active lot, resurface any shopping list entry the user
+        // had already checked off ("done") — the product is now truly 0 stock.
+        const stillStocked = await Inventory.countDocuments({
+            userId: session.user.id,
+            productId: deletedItem.productId,
+            status: 'active',
+        });
+        if (stillStocked === 0) {
+            await ShoppingList.updateOne(
+                { userId: session.user.id, productId: deletedItem.productId, source: 'auto', status: 'done' },
+                { $set: { status: 'pending', reason: 'out_of_stock' } },
+            );
         }
 
         return NextResponse.json({ success: true, message: 'Item deleted' });

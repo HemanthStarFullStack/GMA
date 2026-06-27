@@ -105,7 +105,10 @@ export async function PUT(request: Request) {
 
         await connectDB();
         const body = await request.json();
-        const current = await User.findById(session.user.id).select('familySize').lean();
+        // Read familySizeLog + createdAt now so the log update can be folded into the
+        // main write — one atomic op, no crash window where familySize and familySizeLog diverge.
+        const current = await User.findById(session.user.id).select('familySize familySizeLog createdAt').lean();
+        const oldFamily = current?.familySize ?? 1;
 
         const update: Record<string, any> = {};
         if (typeof body.familySize === 'number') {
@@ -126,11 +129,7 @@ export async function PUT(request: Request) {
             update.tourCompleted = body.tourCompleted;
         }
 
-        // Grab the PREVIOUS doc so we can tell if family size actually changed.
-        const prev = await User.findByIdAndUpdate(session.user.id, { $set: update }, { new: false }).lean();
-        const oldFamily = prev?.familySize ?? 1;
         const newFamily = typeof update.familySize === 'number' ? update.familySize : oldFamily;
-        const newSurvey = update['preferences.surveyFrequency'] ?? prev?.preferences?.surveyFrequency ?? 'occasional';
 
         let reestimating = 0;
         if (newFamily !== oldFamily) {
@@ -138,17 +137,15 @@ export async function PUT(request: Request) {
             // Maintain the size-over-time log used for time-weighted depletion.
             // Seed a baseline at the user's creation the first time, so history
             // before this change is attributed to the OLD size, not the new one.
-            const log = (prev?.familySizeLog as { size: number; from: Date }[] | undefined) ?? [];
+            const log = (current?.familySizeLog as { size: number; from: Date }[] | undefined) ?? [];
             if (log.length === 0) {
-                log.push({ size: oldFamily, from: prev?.createdAt ?? new Date(0) });
+                log.push({ size: oldFamily, from: (current as any)?.createdAt ?? new Date(0) });
             }
             log.push({ size: newFamily, from: now });
-
-            // Record the transition for audit/history purposes.
-            await User.updateOne(
-                { _id: session.user.id },
-                { $set: { prevFamilySize: oldFamily, familySizeChangedAt: now, familySizeLog: log } },
-            );
+            // Fold into the main update — familySize and familySizeLog land atomically.
+            update.familySizeLog = log;
+            update.prevFamilySize = oldFamily;
+            update.familySizeChangedAt = now;
 
             const inv = await Inventory.find({ userId: session.user.id, status: 'active', isDemo: { $ne: true } }).select('productId').lean();
             const barcodes = [...new Set(inv.map((i) => i.productId))];
@@ -161,6 +158,10 @@ export async function PUT(request: Request) {
             reestimating = count;
             void reestimateForHousehold(session.user.id, newFamily, oldFamily);
         }
+
+        // Single write: all fields including familySizeLog land in one atomic op.
+        const prev = await User.findByIdAndUpdate(session.user.id, { $set: update }, { new: false }).lean();
+        const newSurvey = update['preferences.surveyFrequency'] ?? prev?.preferences?.surveyFrequency ?? 'occasional';
 
         return NextResponse.json({
             success: true,

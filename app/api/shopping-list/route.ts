@@ -184,6 +184,11 @@ export async function PATCH(request: Request) {
         } else if (action === 'uncheck') {
             entry.status = 'pending';
         } else if (action === 'dismiss') {
+            // Manual items have no auto-delete recovery path — dismissing one would
+            // hide it permanently with no way to retrieve it.
+            if (entry.source !== 'auto') {
+                return NextResponse.json({ success: false, message: 'Manual items cannot be dismissed' }, { status: 400 });
+            }
             entry.status = 'dismissed';
         }
         await entry.save();

@@ -20,13 +20,13 @@ export default async function HomePage() {
             // Hero carousel: in-stock products sorted most-urgent first.
             // Uses the same blended avgDuration that Analytics shows — no divergence.
             heroItems = forecasts
-                .filter((f) => f.status === "in_stock")
+                .filter((f) => f.status === "in_stock" && f.predictions !== null)
                 .map((f) => ({
                     name: f.name,
                     brand: f.brand,
                     quantity: f.currentStock,
                     unit: f.unit,
-                    daysLeft: Math.max(0, Math.round(f.predictions?.daysUntilEmpty ?? 0)),
+                    daysLeft: Math.max(0, Math.round(f.predictions!.daysUntilEmpty)),
                 }))
                 .sort((a, b) => a.daysLeft - b.daysLeft)
                 .slice(0, 5);
