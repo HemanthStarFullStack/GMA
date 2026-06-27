@@ -158,6 +158,8 @@ export async function PATCH(request: Request) {
         const body = await request.json();
         const id = (body.id || '').toString();
         const action = (body.action || '').toString();
+        // Optional rebuy count from the list's quantity stepper (clamped); 0 = not sent.
+        const reqQty = Math.max(0, Math.min(99, Math.floor(Number(body.qty) || 0)));
         if (!id) return NextResponse.json({ success: false, message: 'id is required' }, { status: 400 });
         if (!['check', 'uncheck', 'dismiss'].includes(action)) {
             return NextResponse.json({ success: false, message: 'invalid action' }, { status: 400 });
@@ -169,9 +171,13 @@ export async function PATCH(request: Request) {
 
         if (action === 'check') {
             // "Got it": re-add auto/catalogue items to inventory exactly once,
-            // restocking the same amount the user last kept (restockQty), not just 1.
+            // restocking the quantity the user dialed in (falls back to the
+            // suggested restockQty, then 1). boughtAt guards against a double add
+            // if they uncheck and re-check.
             if (entry.source === 'auto' && entry.productId && !entry.boughtAt) {
-                await addToInventory(userId, entry.productId, Math.max(1, entry.restockQty ?? 1));
+                const addQty = Math.max(1, reqQty || entry.restockQty || 1);
+                await addToInventory(userId, entry.productId, addQty);
+                entry.restockQty = addQty; // remember what they actually bought
                 entry.boughtAt = new Date();
             }
             entry.status = 'done';

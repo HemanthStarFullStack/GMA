@@ -2,9 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, ShoppingCart, Plus, Check, X, Trash2, Loader2, Package, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, ShoppingCart, Plus, Minus, Check, X, Trash2, Loader2, Package, ChevronDown, ChevronRight } from "lucide-react";
 import UserMenu from "@/components/UserMenu";
-import { formatStock } from "@/lib/formatStock";
 
 interface ListItem {
     _id: string;
@@ -33,6 +32,14 @@ export default function ShoppingPage() {
     const [name, setName] = useState("");
     const [adding, setAdding] = useState(false);
     const [showDone, setShowDone] = useState(false);
+    // Per-item rebuy quantity the user can dial before ticking "Got it". Falls
+    // back to the suggested restockQty until they touch it; their edits survive
+    // list refreshes.
+    const [qty, setQty] = useState<Record<string, number>>({});
+
+    const getQty = (item: ListItem) => qty[item._id] ?? Math.max(1, item.restockQty || 1);
+    const bumpQty = (item: ListItem, delta: number) =>
+        setQty((q) => ({ ...q, [item._id]: Math.max(1, Math.min(99, getQty(item) + delta)) }));
 
     const fetchList = useCallback(async () => {
         try {
@@ -65,12 +72,12 @@ export default function ShoppingPage() {
         }
     };
 
-    const act = (id: string, action: "check" | "uncheck" | "dismiss") =>
+    const act = (id: string, action: "check" | "uncheck" | "dismiss", qtyToAdd?: number) =>
         withBusy(id, async () => {
             await fetch("/api/shopping-list", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, action }),
+                body: JSON.stringify({ id, action, ...(qtyToAdd ? { qty: qtyToAdd } : {}) }),
             });
         });
 
@@ -157,9 +164,9 @@ export default function ShoppingPage() {
                                 return (
                                     <div key={item._id} className="pantry-card flex items-center gap-3 p-3 rise">
                                         <button
-                                            onClick={() => act(item._id, "check")}
+                                            onClick={() => act(item._id, "check", item.productId ? getQty(item) : undefined)}
                                             disabled={isBusy}
-                                            title="Got it"
+                                            title={item.productId ? `Got it — add ${getQty(item)} to inventory` : "Got it"}
                                             className="w-7 h-7 rounded-full border-2 border-line-strong flex items-center justify-center text-transparent hover:border-olive hover:text-olive transition-colors flex-shrink-0 disabled:opacity-50"
                                         >
                                             {isBusy ? <Loader2 className="w-4 h-4 animate-spin text-ink-faint" /> : <Check className="w-4 h-4" />}
@@ -179,11 +186,36 @@ export default function ShoppingPage() {
                                             <h3 className="font-semibold text-ink truncate">{item.name}</h3>
                                             <div className="mt-1 flex items-center gap-2 flex-wrap">
                                                 <span className={`pill ${r.cls}`}>{r.label}</span>
-                                                {(item.restockQty > 1 || item.unit) && (
-                                                    <span className="pill bg-paper-2 text-ink-soft">{formatStock(item.restockQty, item.unit)}</span>
+                                                {/* Pack size only — the count lives in the stepper. */}
+                                                {item.unit && !/^units?$/i.test(item.unit) && (
+                                                    <span className="pill bg-paper-2 text-ink-soft">{item.unit}</span>
                                                 )}
                                             </div>
                                         </div>
+
+                                        {/* Quantity to add to inventory on "Got it" — only for catalogue
+                                            items (manual free-text items can't be added). */}
+                                        {item.productId && (
+                                            <div className="flex items-center gap-1 flex-shrink-0">
+                                                <button
+                                                    onClick={() => bumpQty(item, -1)}
+                                                    disabled={isBusy || getQty(item) <= 1}
+                                                    title="Fewer"
+                                                    className="w-7 h-7 rounded-full border border-line-strong flex items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors disabled:opacity-40"
+                                                >
+                                                    <Minus className="w-3.5 h-3.5" />
+                                                </button>
+                                                <span className="w-5 text-center text-sm font-semibold text-ink tabular-nums">{getQty(item)}</span>
+                                                <button
+                                                    onClick={() => bumpQty(item, 1)}
+                                                    disabled={isBusy}
+                                                    title="More"
+                                                    className="w-7 h-7 rounded-full border border-line-strong flex items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors disabled:opacity-50"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        )}
 
                                         <button
                                             onClick={() => (item.source === "manual" ? remove(item._id) : act(item._id, "dismiss"))}
