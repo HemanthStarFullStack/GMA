@@ -118,8 +118,8 @@ export async function POST(request: Request) {
                     await ShoppingList.updateOne(
                         { userId: session.user.id, productId: row.productId, source: 'auto' },
                         {
-                            $set: { name: prod?.name || `Product ${row.productId.slice(0, 8)}`, reason: 'out_of_stock', restockQty: rebuyQty },
-                            $setOnInsert: { userId: session.user.id, productId: row.productId, source: 'auto', status: 'pending' },
+                            $set: { name: prod?.name || `Product ${row.productId.slice(0, 8)}`, reason: 'out_of_stock', restockQty: rebuyQty, status: 'pending' },
+                            $setOnInsert: { userId: session.user.id, productId: row.productId, source: 'auto' },
                         },
                         { upsert: true },
                     );

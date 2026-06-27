@@ -1,69 +1,54 @@
 import Link from "next/link";
-import mongoose from "mongoose";
 import { Camera, Package, History, Settings, BarChart3, ArrowRight, ShoppingCart } from "lucide-react";
 import { auth } from "@/auth";
 import UserMenu from "@/components/UserMenu";
 import HeroCard, { type HeroItem } from "@/components/HeroCard";
-import connectDB from "@/lib/mongodb";
-import { Inventory, Product, User } from "@/lib/models";
-import { depletion, type SizeSegment } from "@/lib/depletion";
-import { lowStockCount } from "@/lib/forecast";
-
-async function getHeroItems(userId: string): Promise<HeroItem[]> {
-    await connectDB();
-
-    const invItems = await Inventory.find({ userId, status: "active" })
-        .sort({ quantity: 1 })
-        .limit(8)
-        .lean();
-
-    if (invItems.length === 0) return [];
-
-    const barcodes = invItems.map((i) => i.productId);
-    const [products, user] = await Promise.all([
-        Product.find({ barcode: { $in: barcodes } }).lean(),
-        // Guard: User._id is an ObjectId; findById throws on a non-ObjectId id.
-        mongoose.Types.ObjectId.isValid(userId)
-            ? User.findById(userId).select("familySize familySizeLog").lean()
-            : Promise.resolve(null),
-    ]);
-    const prodMap = new Map(products.map((p) => [p.barcode, p]));
-    const currentSize = Math.max(1, user?.familySize ?? 1);
-    const sizeLog = (user?.familySizeLog as SizeSegment[] | undefined) ?? [];
-
-    const now = new Date();
-    const items: HeroItem[] = invItems.map((item) => {
-        const prod = prodMap.get(item.productId);
-        const { daysLeft } = depletion({
-            purchaseDate: item.purchaseDate,
-            qty: item.quantity,
-            now,
-            perPersonDailyRate: prod?.perPersonDailyRate ?? null,
-            averageDuration: prod?.averageDuration ?? 14,
-            currentSize,
-            isPerPerson: prod?.category === "Personal Care",
-            sizeLog,
-        });
-        return {
-            name: prod?.name ?? "Unknown Product",
-            brand: prod?.brand ?? "",
-            quantity: item.quantity,
-            unit: item.unit,
-            daysLeft: Math.max(0, Math.round(daysLeft)),
-        };
-    });
-
-    // Most urgent first; cap at 5 for the carousel
-    return items.sort((a, b) => a.daysLeft - b.daysLeft).slice(0, 5);
-}
+import { ShoppingList } from "@/lib/models";
+import { buildForecasts, isLow } from "@/lib/forecast";
 
 export default async function HomePage() {
     const session = await auth();
 
-    // Never let a DB/forecast hiccup 500 the landing page — fall back to safe defaults.
-    const heroItems = session?.user?.id ? await getHeroItems(session.user.id).catch(() => []) : [];
+    let heroItems: HeroItem[] = [];
+    let lowCount = 0;
+
+    if (session?.user?.id) {
+        const userId = session.user.id;
+        try {
+            const forecasts = await buildForecasts(userId);
+
+            // Hero carousel: in-stock products sorted most-urgent first.
+            // Uses the same blended avgDuration that Analytics shows — no divergence.
+            heroItems = forecasts
+                .filter((f) => f.status === "in_stock")
+                .map((f) => ({
+                    name: f.name,
+                    brand: f.brand,
+                    quantity: f.currentStock,
+                    unit: f.unit,
+                    daysLeft: Math.max(0, Math.round(f.predictions?.daysUntilEmpty ?? 0)),
+                }))
+                .sort((a, b) => a.daysLeft - b.daysLeft)
+                .slice(0, 5);
+
+            // Badge count: items the user hasn't explicitly dismissed.
+            const lowItems = forecasts.filter(isLow);
+            if (lowItems.length > 0) {
+                const dismissed = await ShoppingList.find({
+                    userId,
+                    source: "auto",
+                    status: "dismissed",
+                    productId: { $in: lowItems.map((i) => i.productId) },
+                }).select("productId").lean();
+                const dismissedSet = new Set(dismissed.map((d) => d.productId as string));
+                lowCount = lowItems.filter((i) => !dismissedSet.has(i.productId)).length;
+            }
+        } catch {
+            // keep defaults — never 500 the landing page
+        }
+    }
+
     const isGuest = !session?.user;
-    const lowCount = session?.user?.id ? await lowStockCount(session.user.id).catch(() => 0) : 0;
 
     const tiles = [
         { href: "/inventory", label: "Inventory", note: "What you have",     Icon: Package,  tint: "text-olive" },

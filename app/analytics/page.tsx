@@ -169,7 +169,7 @@ export default function AnalyticsPage() {
                                                         <TrendingDown className="w-4 h-4" />
                                                         <span className="text-xs font-semibold">Consumption rate</span>
                                                     </div>
-                                                    <p className="font-display text-2xl font-semibold text-ink">{selected.predictions.consumptionRate} <span className="text-base text-ink-soft">/day</span></p>
+                                                    <p className="font-display text-2xl font-semibold text-ink">{selected.predictions.consumptionRate} <span className="text-base text-ink-soft">{selected.unit}/day</span></p>
                                                 </div>
                                                 <div className={`rounded-xl p-4 border ${selected.predictions.needsRestock ? "border-terracotta/30 bg-terracotta/5" : "border-olive/25 bg-olive/5"}`}>
                                                     <div className={`flex items-center gap-2 mb-1 ${selected.predictions.needsRestock ? "text-terracotta" : "text-olive"}`}>
