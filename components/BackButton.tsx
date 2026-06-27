@@ -13,7 +13,7 @@ export default function BackButton({ fallback = "/" }: { fallback?: string }) {
         else router.push(fallback);
     };
     return (
-        <button onClick={onBack} className="flex items-center gap-2 text-ink-soft hover:text-ink">
+        <button type="button" onClick={onBack} className="flex items-center gap-2 text-ink-soft hover:text-ink">
             <ArrowLeft className="w-5 h-5" />
             <span className="font-medium">Back</span>
         </button>

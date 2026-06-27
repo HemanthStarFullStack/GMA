@@ -107,7 +107,17 @@ export default function GmaTour() {
             const end = (skip: boolean) => {
                 if (runId.current !== id) return;
                 dRef.current = null;
-                if (skip) { clearPhase(); cleanup(); return; }
+                if (skip) {
+                    clearPhase();
+                    // Await cleanup so tourCompleted=true and demo data are gone BEFORE
+                    // the next page load reads them — prevents the tour from restarting.
+                    // Hard reload instead of router.push: flushes the Next.js Router
+                    // Cache so every cached demo page (inventory, shopping, analytics…)
+                    // is evicted; a soft push would still serve stale cached demo content
+                    // when the user navigates back to those pages.
+                    cleanup().finally(() => { window.location.href = "/"; });
+                    return;
+                }
                 const next = NEXT_PHASE[p];
                 if (next) { setPhase(userId, next); router.push(PHASE_PATHS[next]); }
                 else { clearPhase(); cleanup(); }
