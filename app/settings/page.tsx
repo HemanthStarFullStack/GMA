@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Save, Users, Loader2, Check, User as UserIcon, Camera } from "lucide-react";
 import BackButton from "@/components/BackButton";
+import { toThumb } from "@/lib/clientImage";
 
 export default function SettingsPage() {
     const { update } = useSession();
@@ -43,7 +44,7 @@ export default function SettingsPage() {
         setUploading(true);
         try {
             const fd = new FormData();
-            fd.append("file", file);
+            fd.append("file", await toThumb(file, 400), "avatar.jpg");
             const res = await fetch("/api/upload", { method: "POST", body: fd });
             const data = await res.json();
             if (data.success) setImage(data.url);

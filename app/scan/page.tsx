@@ -6,6 +6,7 @@ import PhotoCapture from "@/components/PhotoCapture";
 import { Package, CheckCircle2, Loader2, Minus, Plus, Sparkles, ImagePlus, X, ScanLine } from "lucide-react";
 import BackButton from "@/components/BackButton";
 import UserMenu from "@/components/UserMenu";
+import { toThumb } from "@/lib/clientImage";
 
 const CATEGORIES = [
     "Dairy & Eggs", "Beverages", "Fruits & Vegetables", "Meat & Seafood",
@@ -66,8 +67,11 @@ export default function ScanPage() {
         // costs no extra wait. Best-effort: a failed upload just leaves no image.
         const uploadPromise = (async () => {
             try {
+                // Store a small thumbnail, not the full 1600px OCR capture (which
+                // is still sent to product-vision below at full detail).
+                const thumb = await toThumb(image);
                 const fd = new FormData();
-                fd.append("file", image, "label.jpg");
+                fd.append("file", thumb, "label.jpg");
                 const r = await fetch("/api/upload", { method: "POST", body: fd });
                 const j = await r.json();
                 return j.success ? (j.url as string) : null;
@@ -199,7 +203,7 @@ export default function ScanPage() {
         setUploadingImage(true);
         try {
             const fd = new FormData();
-            fd.append("file", file);
+            fd.append("file", await toThumb(file), "photo.jpg");
             const res = await fetch("/api/upload", { method: "POST", body: fd });
             const data = await res.json();
             if (data.success) setForm((f) => ({ ...f, imageUrl: data.url }));
