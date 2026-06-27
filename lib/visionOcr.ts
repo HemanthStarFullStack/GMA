@@ -72,8 +72,17 @@ async function reachable(): Promise<boolean> {
     return lastProbe.ok;
 }
 
-// Front: full transcription for parseLabel + Groq.
-const FULL_PROMPT = 'Recognize all the text in the image.';
+// Front: full transcription for parseLabel + Groq. The bare "recognize all the
+// text" prompt made the VLM summarise — it returned only the hero lines (brand +
+// product type) and dropped the small print, so the net quantity ("1 L" on an
+// Aquafina bottle) never reached parseLabel and the size came up blank. Spell out
+// that the small print, especially net quantity/volume, must be included, and
+// suppress the chatty "Here's the text I recognized…" preamble.
+const FULL_PROMPT =
+    'Transcribe ALL text printed on this product label, exactly as written, top to bottom. ' +
+    'Include the small print, especially the net quantity / net weight / volume ' +
+    '(e.g. "1 L", "500 ml", "200 g", "1 Litre"), MRP/price, brand, product name and variant. ' +
+    'Do not summarise, translate, or omit anything. Output only the transcribed text, no commentary.';
 // Back: ask only for the net quantity (size). Grounded — copy printed digits,
 // never compute or infer (a promo "50 g EXTRA" must stay "50 g EXTRA", not become
 // "100 g"). Price is deliberately NOT asked: a 2B model fabricates a plausible
