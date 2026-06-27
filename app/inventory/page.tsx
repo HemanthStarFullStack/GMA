@@ -4,7 +4,6 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Loader2, BarChart3, ShoppingCart, Search } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
-import ProductSurvey from "@/components/ProductSurvey";
 import UserMenu from "@/components/UserMenu";
 
 interface InventoryItem {
@@ -52,8 +51,6 @@ export default function InventoryPage() {
     const [items, setItems] = useState<InventoryItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [familySize, setFamilySize] = useState(1);
-    const [surveyOpen, setSurveyOpen] = useState(false);
-    const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
     const [query, setQuery] = useState("");
     const [sortBy, setSortBy] = useState<SortBy>("recent");
     const [section, setSection] = useState<string>("all");
@@ -84,44 +81,37 @@ export default function InventoryPage() {
         }
     };
 
-    const handleConsume = (id: string) => {
+    // Mark a pack consumed. The real duration is just (now − purchaseDate) — the
+    // pack clock that was reset on the last scan/decrement — so measure it instead
+    // of asking the user. flagged = measured duration far off the AI estimate.
+    const handleConsume = async (id: string) => {
         const item = items.find((i) => i._id === id);
         if (!item) return;
-        setSelectedItem(item);
-        setSurveyOpen(true);
-    };
-
-    const handleSurveySubmit = async (surveyData: { userReportedDays: number; notes?: string }) => {
-        if (!selectedItem) return;
         try {
             const actualDays = Math.max(
                 1,
-                Math.floor((Date.now() - new Date(selectedItem.purchaseDate).getTime()) / 86400000),
+                Math.floor((Date.now() - new Date(item.purchaseDate).getTime()) / 86400000),
             );
-            const expected = selectedItem.product.averageDuration || 14;
+            const expected = item.product.averageDuration || 14;
 
             const res = await fetch("/api/history", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    productId: selectedItem.productId,
-                    inventoryId: selectedItem._id,
-                    durationDays: surveyData.userReportedDays || actualDays,
+                    productId: item.productId,
+                    inventoryId: item._id,
+                    durationDays: actualDays,
                     surveyData: {
-                        userReportedDays: surveyData.userReportedDays,
+                        userReportedDays: actualDays,
                         familySize,
-                        flagged: Math.abs(surveyData.userReportedDays - expected) > expected * 0.3,
-                        notes: surveyData.notes || "",
+                        flagged: Math.abs(actualDays - expected) > expected * 0.3,
+                        notes: "",
                     },
                 }),
             });
 
             const data = await res.json();
-            if (data.success) {
-                setSurveyOpen(false);
-                setSelectedItem(null);
-                fetchInventory();
-            }
+            if (data.success) fetchInventory();
         } catch (error) {
             console.error("Failed to log consumption:", error);
         }
@@ -287,17 +277,6 @@ export default function InventoryPage() {
                     </>
                 )}
             </main>
-
-            {selectedItem && (
-                <ProductSurvey
-                    isOpen={surveyOpen}
-                    onClose={() => { setSurveyOpen(false); setSelectedItem(null); }}
-                    productName={selectedItem.product.name}
-                    expectedDays={selectedItem.product.averageDuration || 14}
-                    familySize={familySize}
-                    onSubmit={handleSurveySubmit}
-                />
-            )}
         </div>
     );
 }
