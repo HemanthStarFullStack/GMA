@@ -26,6 +26,10 @@ export interface ProductForecast {
     restockQty?: number; // peak packs held — the rebuy count to suggest (in-stock items only)
     purchaseDate: Date | null;
     rows?: { purchaseDate: Date; qty: number }[];
+    // Best per-pack duration estimate (blended history + catalogue, or just the
+    // AI catalogue value before any history). Always set so Analytics can show an
+    // estimate even when there's no stock to project a run-out date from.
+    estimatedDurationDays: number;
     consumptionHistory: {
         timesConsumed: number;
         averageDurationDays: number;
@@ -147,6 +151,7 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
         } else {
             avgDuration = catalogueAvg;
         }
+        product.estimatedDurationDays = avgDuration;
 
         if (product.status === 'in_stock' && avgDuration > 0) {
             const prod = productMap.get(product.productId);

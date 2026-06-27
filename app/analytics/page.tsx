@@ -16,6 +16,7 @@ interface Product {
     currentStock: number;
     unit: string;
     purchaseDate: string | null;
+    estimatedDurationDays: number;
     consumptionHistory: {
         timesConsumed: number;
         averageDurationDays: number;
@@ -191,6 +192,25 @@ export default function AnalyticsPage() {
                                                     <p className="text-sm text-terracotta-deep"><strong>Restock soon</strong> — runs out in under 7 days.</p>
                                                 </div>
                                             )}
+                                        </div>
+                                    ) : selected.estimatedDurationDays > 0 ? (
+                                        <div>
+                                            <p className="kicker mb-3">Estimated</p>
+                                            <div className="rounded-xl p-4 border border-amber/30 bg-amber/5">
+                                                <div className="flex items-center gap-2 mb-1 text-amber">
+                                                    <Clock className="w-4 h-4" />
+                                                    <span className="text-xs font-semibold">Lasts about</span>
+                                                </div>
+                                                <p className="font-display text-2xl font-semibold text-ink">
+                                                    {selected.estimatedDurationDays} <span className="text-base text-ink-soft">days / {selected.unit}</span>
+                                                </p>
+                                                <p className="text-xs text-ink-soft mt-2">
+                                                    {selected.consumptionHistory.timesConsumed > 0
+                                                        ? "Learned from your usage."
+                                                        : "AI estimate — refines as you mark it consumed."}
+                                                    {selected.status === "out_of_stock" && " Add it back to stock to get a run-out date."}
+                                                </p>
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="bg-paper-2/60 border border-line rounded-xl p-6 text-center">
