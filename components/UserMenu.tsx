@@ -20,7 +20,7 @@ export default function UserMenu() {
             >
                 {session.user.image ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={session.user.image} alt="Profile" className="w-10 h-10 rounded-full border border-line bg-card" />
+                    <img src={session.user.image} alt="Profile" className="w-10 h-10 rounded-full object-cover border border-line bg-card" />
                 ) : (
                     <div className="w-10 h-10 rounded-full bg-olive/10 flex items-center justify-center text-olive border border-olive/20">
                         <User className="w-5 h-5" />
