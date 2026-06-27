@@ -31,17 +31,21 @@ export default async function HomePage() {
                 .sort((a, b) => a.daysLeft - b.daysLeft)
                 .slice(0, 5);
 
-            // Badge count: items the user hasn't explicitly dismissed.
+            // Badge = low items not yet acted on (pending).
+            // Exclude both 'dismissed' (user skipped) and 'done' (user bought it).
+            // 'done' items are still isLow if stock is still thin after the purchase,
+            // but they live in the collapsed "Got it" section of the shopping list —
+            // counting them makes the badge disagree with what the user sees as pending.
             const lowItems = forecasts.filter(isLow);
             if (lowItems.length > 0) {
-                const dismissed = await ShoppingList.find({
+                const handled = await ShoppingList.find({
                     userId,
                     source: "auto",
-                    status: "dismissed",
+                    status: { $in: ["dismissed", "done"] },
                     productId: { $in: lowItems.map((i) => i.productId) },
                 }).select("productId").lean();
-                const dismissedSet = new Set(dismissed.map((d) => d.productId as string));
-                lowCount = lowItems.filter((i) => !dismissedSet.has(i.productId)).length;
+                const handledSet = new Set(handled.map((d) => d.productId as string));
+                lowCount = lowItems.filter((i) => !handledSet.has(i.productId)).length;
             }
         } catch {
             // keep defaults — never 500 the landing page
