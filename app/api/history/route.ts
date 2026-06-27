@@ -20,9 +20,14 @@ export async function GET() {
             .limit(50)
             .lean();
 
-        // Populate product details for each log
-        const enrichedLogs = await Promise.all(logs.map(async (log) => {
-            const product = await Product.findOne({ barcode: log.productId });
+        const barcodes = [...new Set(logs.map((l) => l.productId))];
+        const products = barcodes.length
+            ? await Product.find({ barcode: { $in: barcodes } }).lean()
+            : [];
+        const pmap = new Map(products.map((p) => [p.barcode, p]));
+
+        const enrichedLogs = logs.map((log) => {
+            const product = pmap.get(log.productId);
             return {
                 ...log,
                 productDetails: product ? {
@@ -30,10 +35,10 @@ export async function GET() {
                     brand: product.brand,
                     category: product.category,
                     imageUrl: product.imageUrl,
-                    flavor: product.flavor
-                } : null
+                    flavor: product.flavor,
+                } : null,
             };
-        }));
+        });
 
         return NextResponse.json({
             success: true,

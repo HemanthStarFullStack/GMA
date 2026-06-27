@@ -1,7 +1,8 @@
 'use client';
 
 import { useSession, signOut } from "next-auth/react";
-import { User, LogOut } from "lucide-react";
+import { User, LogOut, Settings } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 export default function UserMenu() {
@@ -35,6 +36,14 @@ export default function UserMenu() {
                             <p className="text-sm font-semibold text-ink truncate">{session.user.name}</p>
                             <p className="text-xs text-ink-faint truncate">{session.user.email}</p>
                         </div>
+                        <Link
+                            href="/settings"
+                            onClick={() => setIsOpen(false)}
+                            className="w-full text-left px-4 py-2.5 text-sm text-ink hover:bg-paper-2 flex items-center gap-2 transition-colors"
+                        >
+                            <Settings className="w-4 h-4" />
+                            Settings
+                        </Link>
                         <button
                             onClick={() => signOut()}
                             className="w-full text-left px-4 py-2.5 text-sm text-berry hover:bg-berry/5 flex items-center gap-2 transition-colors"

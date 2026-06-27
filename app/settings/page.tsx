@@ -13,7 +13,6 @@ export default function SettingsPage() {
     const [uploading, setUploading] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
     const [familySize, setFamilySize] = useState(1);
-    const [surveyFrequency, setSurveyFrequency] = useState<"always" | "occasional">("occasional");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -28,7 +27,6 @@ export default function SettingsPage() {
                     setName(data.data.name ?? "");
                     setImage(data.data.image ?? null);
                     setFamilySize(data.data.familySize ?? 1);
-                    setSurveyFrequency(data.data.surveyFrequency ?? "occasional");
                 }
             } catch {
                 /* keep defaults */
@@ -64,13 +62,14 @@ export default function SettingsPage() {
             const res = await fetch("/api/user", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ familySize, surveyFrequency, name, image }),
+                body: JSON.stringify({ familySize, name, image }),
             });
             const data = await res.json().catch(() => ({}));
             if (res.ok) {
                 // Push the new name/photo into the session JWT so the header avatar
-                // and menu update without a re-login.
-                await update({ name, image });
+                // and menu update without a re-login. Only pass name if non-empty —
+                // an empty string would blank the display name in the header.
+                await update({ ...(name.trim() ? { name } : {}), image });
                 setSaved(true);
                 setTimeout(() => setSaved(false), 2000);
                 const n = data?.data?.reestimating ?? 0;
@@ -174,22 +173,10 @@ export default function SettingsPage() {
                                     <button onClick={() => setSize(familySize + 1)} className="w-10 h-10 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2 text-lg">+</button>
                                 </div>
 
-                                <label className="block text-sm font-semibold text-ink-soft mt-6 mb-2">Consumption survey</label>
-                                <div className="flex gap-2">
-                                    {(["occasional", "always"] as const).map((opt) => (
-                                        <button
-                                            key={opt}
-                                            onClick={() => setSurveyFrequency(opt)}
-                                            className={`flex-1 py-2 px-3 rounded-lg border text-sm font-semibold capitalize transition ${surveyFrequency === opt ? "border-terracotta bg-terracotta/10 text-terracotta" : "border-line-strong text-ink-soft hover:border-ink-faint"}`}
-                                        >
-                                            {opt}
-                                        </button>
-                                    ))}
-                                </div>
                             </div>
 
                             <div className="bg-paper-2/60 px-6 py-4 flex justify-end border-t border-line">
-                                <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 px-4 py-2 disabled:opacity-50">
+                                <button onClick={handleSave} disabled={saving || uploading} className="btn-primary flex items-center gap-2 px-4 py-2 disabled:opacity-50">
                                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                                     {saving ? "Saving…" : saved ? "Saved" : "Save changes"}
                                 </button>
