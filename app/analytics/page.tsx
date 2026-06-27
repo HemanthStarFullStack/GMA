@@ -132,9 +132,9 @@ export default function AnalyticsPage() {
                                                 <Package className="w-10 h-10 text-ink-faint" strokeWidth={1.5} />
                                             )}
                                         </div>
-                                        <div className="flex-1">
-                                            {selected.brand && <p className="kicker">{selected.brand}</p>}
-                                            <h2 className="font-display text-3xl font-semibold text-ink leading-tight">{selected.name}</h2>
+                                        <div className="flex-1 min-w-0">
+                                            {selected.brand && <p className="kicker truncate">{selected.brand}</p>}
+                                            <h2 className="font-display text-3xl font-semibold text-ink leading-tight break-words">{selected.name}</h2>
                                             <div className="flex gap-2 mt-2">
                                                 <span className="pill bg-paper-2 text-ink-soft">{selected.category}</span>
                                                 <span className={`pill ${selected.status === "in_stock" ? "bg-olive/10 text-olive" : "bg-berry/10 text-berry"}`}>

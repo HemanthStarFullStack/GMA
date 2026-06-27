@@ -539,7 +539,7 @@ export default function ScanPage() {
                 )}
 
                 {toast && mode !== "done" && (
-                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-ink text-paper text-sm px-4 py-2 rounded-full shadow-lg">
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 max-w-[90vw] text-center bg-ink text-paper text-sm px-4 py-2 rounded-full shadow-lg">
                         {toast}
                         <button onClick={() => setToast(null)} className="ml-3 text-paper/60 hover:text-paper">✕</button>
                     </div>
