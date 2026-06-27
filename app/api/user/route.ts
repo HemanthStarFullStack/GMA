@@ -69,7 +69,8 @@ export async function GET() {
         return NextResponse.json({
             success: true,
             data: {
-                name: session.user.name || user?.displayName || 'User',
+                name: user?.name || user?.displayName || session.user.name || 'User',
+                image: user?.image || session.user.image || null,
                 familySize,
                 surveyFrequency: user?.preferences?.surveyFrequency ?? 'occasional',
                 demoSeeded: user?.demoSeeded ?? false,
@@ -93,7 +94,12 @@ export async function PUT(request: Request) {
             const body = await request.json().catch(() => ({}));
             return NextResponse.json({
                 success: true,
-                data: { familySize: body.familySize ?? 1, surveyFrequency: body.surveyFrequency ?? 'occasional' },
+                data: {
+                    familySize: body.familySize ?? 1,
+                    surveyFrequency: body.surveyFrequency ?? 'occasional',
+                    name: body.name,
+                    image: body.image,
+                },
             });
         }
 
@@ -104,6 +110,14 @@ export async function PUT(request: Request) {
         const update: Record<string, any> = {};
         if (typeof body.familySize === 'number') {
             update.familySize = Math.max(1, Math.min(20, Math.round(body.familySize)));
+        }
+        if (typeof body.name === 'string' && body.name.trim()) {
+            const name = body.name.trim().slice(0, 60);
+            update.name = name;
+            update.displayName = name;
+        }
+        if (typeof body.image === 'string' && body.image.trim()) {
+            update.image = body.image.trim().slice(0, 500);
         }
         if (body.surveyFrequency === 'always' || body.surveyFrequency === 'occasional') {
             update['preferences.surveyFrequency'] = body.surveyFrequency;
@@ -150,7 +164,13 @@ export async function PUT(request: Request) {
 
         return NextResponse.json({
             success: true,
-            data: { familySize: newFamily, surveyFrequency: newSurvey, reestimating },
+            data: {
+                familySize: newFamily,
+                surveyFrequency: newSurvey,
+                reestimating,
+                name: update.name ?? prev?.name ?? prev?.displayName,
+                image: update.image ?? prev?.image,
+            },
         });
     } catch (error: any) {
         return serverError('user', error);
