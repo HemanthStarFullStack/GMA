@@ -111,6 +111,7 @@ export interface IInventory extends Document {
     userId: string;
     productId: string; // barcode
     quantity: number;
+    peakQty?: number; // most packs ever held in this lot — the rebuy quantity to suggest once it runs out
     unit: string;
     purchaseDate: Date;
     expiryDate?: Date;
@@ -122,6 +123,7 @@ const InventorySchema = new Schema<IInventory>({
     userId: { type: String, required: true, index: true },
     productId: { type: String, required: true },
     quantity: { type: Number, required: true },
+    peakQty: { type: Number },
     unit: { type: String, required: true },
     purchaseDate: { type: Date, default: Date.now },
     expiryDate: Date,
@@ -172,6 +174,7 @@ export interface IShoppingList extends Document {
     reason: 'low_stock' | 'out_of_stock' | 'manual';
     source: 'auto' | 'manual';
     status: 'pending' | 'done' | 'dismissed';
+    restockQty?: number; // suggested rebuy count = how many you last stocked (captured when it ran out)
     boughtAt?: Date;    // set once on first "got it" → guards against double inventory add
     createdAt: Date;
     updatedAt: Date;
@@ -185,6 +188,7 @@ const ShoppingListSchema = new Schema<IShoppingList>(
         reason: { type: String, enum: ['low_stock', 'out_of_stock', 'manual'], required: true },
         source: { type: String, enum: ['auto', 'manual'], required: true },
         status: { type: String, enum: ['pending', 'done', 'dismissed'], default: 'pending' },
+        restockQty: { type: Number },
         boughtAt: { type: Date },
     },
     { timestamps: true },

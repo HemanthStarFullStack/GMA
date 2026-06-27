@@ -23,6 +23,7 @@ export interface ProductForecast {
     unit: string;
     status: 'in_stock' | 'out_of_stock';
     currentStock: number;
+    restockQty?: number; // peak packs held — the rebuy count to suggest (in-stock items only)
     purchaseDate: Date | null;
     rows?: { purchaseDate: Date; qty: number }[];
     consumptionHistory: {
@@ -86,6 +87,7 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
                 unit: item.unit || d.defaultUnit,
                 status: 'in_stock',
                 currentStock: 0,
+                restockQty: 0,
                 purchaseDate: item.purchaseDate,
                 rows: [],
                 consumptionHistory: { timesConsumed: 0, averageDurationDays: 0, lastConsumed: null },
@@ -94,6 +96,8 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
         }
         const entry = map.get(id);
         entry.currentStock += item.quantity;
+        // Largest single stocking across this product's lots = the rebuy hint.
+        entry.restockQty = Math.max(entry.restockQty ?? 0, item.peakQty ?? item.quantity);
         entry.rows.push({ purchaseDate: item.purchaseDate, qty: item.quantity });
     }
 

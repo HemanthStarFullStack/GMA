@@ -16,6 +16,7 @@ interface ListItem {
     reason: "low_stock" | "out_of_stock" | "manual";
     source: "auto" | "manual";
     status: "pending" | "done";
+    restockQty: number;
     boughtAt: string | null;
 }
 
@@ -178,7 +179,9 @@ export default function ShoppingPage() {
                                             <h3 className="font-semibold text-ink truncate">{item.name}</h3>
                                             <div className="mt-1 flex items-center gap-2 flex-wrap">
                                                 <span className={`pill ${r.cls}`}>{r.label}</span>
-                                                {item.unit && <span className="pill bg-paper-2 text-ink-soft">{formatStock(1, item.unit)}</span>}
+                                                {(item.restockQty > 1 || item.unit) && (
+                                                    <span className="pill bg-paper-2 text-ink-soft">{formatStock(item.restockQty, item.unit)}</span>
+                                                )}
                                             </div>
                                         </div>
 

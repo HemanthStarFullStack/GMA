@@ -44,16 +44,24 @@ async function autoSync(userId: string) {
     // so a previously dismissed (still-low) entry is NOT resurrected to pending;
     // name/reason are refreshed each sync. Unique partial index makes this race-safe.
     await Promise.all(
-        low.map((p) =>
-            ShoppingList.updateOne(
+        low.map((p) => {
+            const set: Record<string, unknown> = {
+                name: p.name,
+                reason: p.status === 'out_of_stock' ? 'out_of_stock' : 'low_stock',
+            };
+            // In-stock low items carry a live peak (rebuy hint). Out-of-stock items
+            // have no live row, so their restockQty is set at consume time — don't
+            // overwrite it here (forecast can't recover it from logs).
+            if (p.status === 'in_stock' && p.restockQty && p.restockQty > 1) set.restockQty = p.restockQty;
+            return ShoppingList.updateOne(
                 { userId, productId: p.productId, source: 'auto' },
                 {
-                    $set: { name: p.name, reason: p.status === 'out_of_stock' ? 'out_of_stock' : 'low_stock' },
+                    $set: set,
                     $setOnInsert: { userId, productId: p.productId, source: 'auto', status: 'pending' },
                 },
                 { upsert: true },
-            ),
-        ),
+            );
+        }),
     );
 }
 
@@ -90,6 +98,7 @@ export async function GET() {
                     reason: e.reason,
                     source: e.source,
                     status: e.status,
+                    restockQty: e.restockQty ?? 1,
                     boughtAt: e.boughtAt ?? null,
                 };
             })
@@ -159,9 +168,10 @@ export async function PATCH(request: Request) {
         if (!entry) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
         if (action === 'check') {
-            // "Got it": re-add auto/catalogue items to inventory exactly once.
+            // "Got it": re-add auto/catalogue items to inventory exactly once,
+            // restocking the same amount the user last kept (restockQty), not just 1.
             if (entry.source === 'auto' && entry.productId && !entry.boughtAt) {
-                await addToInventory(userId, entry.productId);
+                await addToInventory(userId, entry.productId, Math.max(1, entry.restockQty ?? 1));
                 entry.boughtAt = new Date();
             }
             entry.status = 'done';
