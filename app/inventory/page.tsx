@@ -90,6 +90,8 @@ export default function InventoryPage() {
     const handleConsume = async (id: string) => {
         const item = items.find((i) => i._id === id);
         if (!item) return;
+        // Optimistic: remove immediately (history API always decrements or deletes).
+        setItems((prev) => prev.filter((i) => i._id !== id));
         try {
             const actualDays = Math.max(
                 1,
@@ -115,8 +117,10 @@ export default function InventoryPage() {
 
             const data = await res.json();
             if (data.success) fetchInventory();
+            else setItems((prev) => [...prev, item]);
         } catch (error) {
             console.error("Failed to log consumption:", error);
+            setItems((prev) => [...prev, item]);
         }
     };
 
@@ -128,20 +132,26 @@ export default function InventoryPage() {
 
     const confirmDelete = async () => {
         if (!pendingDelete) return;
+        const removing = pendingDelete;
+        // Optimistic: close modal and remove immediately.
+        setPendingDelete(null);
+        setItems((prev) => prev.filter((i) => i._id !== removing._id));
         try {
-            const res = await fetch(`/api/inventory?id=${pendingDelete._id}`, { method: "DELETE" });
+            const res = await fetch(`/api/inventory?id=${removing._id}`, { method: "DELETE" });
             const data = await res.json();
             if (data.success) fetchInventory();
+            else setItems((prev) => [...prev, removing]);
         } catch (error) {
             console.error("Failed to delete item:", error);
-        } finally {
-            setPendingDelete(null);
+            setItems((prev) => [...prev, removing]);
         }
     };
 
     // Adjust pack count by ±1. A decrement that would hit 0 returns 409 — that
     // means "finish the last pack", so we fall back to the consume/survey flow.
     const handleAdjust = async (id: string, delta: number) => {
+        // Optimistic: update quantity immediately.
+        setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: i.quantity + delta } : i));
         try {
             const res = await fetch("/api/inventory", {
                 method: "PATCH",
@@ -149,9 +159,8 @@ export default function InventoryPage() {
                 body: JSON.stringify({ id, delta }),
             });
             if (res.status === 409) {
-                // The stepper hit the floor — this is the last pack. Fall through to
-                // the consume flow automatically, but tell the user so it's not a
-                // silent disappearance.
+                // Revert optimistic update, then fall through to consume flow.
+                setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: i.quantity - delta } : i));
                 setToast("Last pack — marking as consumed");
                 setTimeout(() => setToast(null), 2500);
                 handleConsume(id);
@@ -159,8 +168,10 @@ export default function InventoryPage() {
             }
             const data = await res.json();
             if (data.success) fetchInventory();
+            else setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: i.quantity - delta } : i));
         } catch (error) {
             console.error("Failed to adjust quantity:", error);
+            setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: i.quantity - delta } : i));
         }
     };
 
