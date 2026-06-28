@@ -60,6 +60,10 @@ export default function ScanPage() {
     const [lowConf, setLowConf] = useState<Set<string>>(new Set());
     const fileRef = useRef<HTMLInputElement>(null);
     const backRef = useRef<HTMLInputElement>(null);
+    // Always-current snapshot so async handlers read the latest user edits,
+    // not the stale closure value from when the handler was created.
+    const formRef = useRef(form);
+    formRef.current = form;
 
     const handlePhoto = async (image: Blob) => {
         setLookingUp(true);
@@ -236,11 +240,18 @@ export default function ScanPage() {
             const applyUnit = !!sizeFromBack && !hasRealUnit;
             const applyPrice = !!priceFromBack && !hasPrice;
             if (!applyUnit && !applyPrice) {
-                setToast(
-                    (q || p)
-                        ? "Couldn't read a clear size/price on the back — set it manually."
-                        : "Couldn't find details on the back — set them manually.",
-                );
+                // Distinguish "guard blocked a valid read" from "read actually failed".
+                if (hasRealUnit && sizeFromBack) {
+                    setToast("Size already captured from the front — edit the field to override.");
+                } else if (hasPrice && priceFromBack) {
+                    setToast("Price already set — edit the field to override.");
+                } else {
+                    setToast(
+                        (q || p)
+                            ? "Couldn't read a clear size/price on the back — set it manually."
+                            : "Couldn't find details on the back — set them manually.",
+                    );
+                }
                 return;
             }
             const nextUnit = applyUnit && sizeFromBack ? sizeFromBack : form.unit;
@@ -259,14 +270,15 @@ export default function ScanPage() {
             // lasts far longer than 200 ml. Refresh the duration estimate with the
             // merged details. Needs a product name; if there's none yet (back-first
             // flow) just fill the fields — the user re-estimates after naming it.
-            if (form.name.trim()) {
+            const latestForm = formRef.current;
+            if (latestForm.name.trim()) {
                 try {
                     const pr = await fetch("/api/predict", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
-                            name: form.name, brand: form.brand, flavor: form.flavor,
-                            price: nextPrice, category: form.category, unit: nextUnit, size: nextUnit,
+                            name: latestForm.name, brand: latestForm.brand, flavor: latestForm.flavor,
+                            price: nextPrice, category: latestForm.category, unit: nextUnit, size: nextUnit,
                         }),
                     });
                     const pj = await pr.json();
@@ -551,13 +563,19 @@ export default function ScanPage() {
 // Raw camera files can exceed the OCR 12MB cap; shrink to the same 1600px the
 // live capture uses before sending. (PhotoCapture downscales its own frames.)
 async function downscale(file: File, maxEdge = 1600): Promise<Blob> {
-    const bmp = await createImageBitmap(file);
-    const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height));
-    const c = document.createElement("canvas");
-    c.width = Math.round(bmp.width * scale);
-    c.height = Math.round(bmp.height * scale);
-    c.getContext("2d")?.drawImage(bmp, 0, 0, c.width, c.height);
-    return new Promise<Blob>((res) => c.toBlob((b) => res(b ?? file), "image/jpeg", 0.85));
+    try {
+        const bmp = await createImageBitmap(file);
+        const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(bmp.width * scale);
+        c.height = Math.round(bmp.height * scale);
+        const ctx = c.getContext("2d");
+        if (!ctx) return file;
+        ctx.drawImage(bmp, 0, 0, c.width, c.height);
+        return new Promise<Blob>((resolve) => c.toBlob((b) => resolve(b ?? file), "image/jpeg", 0.85));
+    } catch {
+        return file;
+    }
 }
 
 // Guards for back-panel reads. A real net quantity is short and is a number

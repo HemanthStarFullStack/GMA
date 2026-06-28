@@ -90,6 +90,7 @@ export default function InventoryPage() {
     const handleConsume = async (id: string) => {
         const item = items.find((i) => i._id === id);
         if (!item) return;
+        const idx = items.findIndex((i) => i._id === id);
         // Optimistic: remove immediately (history API always decrements or deletes).
         setItems((prev) => prev.filter((i) => i._id !== id));
         try {
@@ -117,10 +118,10 @@ export default function InventoryPage() {
 
             const data = await res.json();
             if (data.success) fetchInventory();
-            else setItems((prev) => [...prev, item]);
+            else setItems((prev) => { const next = [...prev]; next.splice(idx, 0, item); return next; });
         } catch (error) {
             console.error("Failed to log consumption:", error);
-            setItems((prev) => [...prev, item]);
+            setItems((prev) => { const next = [...prev]; next.splice(idx, 0, item); return next; });
         }
     };
 
@@ -133,6 +134,7 @@ export default function InventoryPage() {
     const confirmDelete = async () => {
         if (!pendingDelete) return;
         const removing = pendingDelete;
+        const removingIdx = items.findIndex((i) => i._id === removing._id);
         // Optimistic: close modal and remove immediately.
         setPendingDelete(null);
         setItems((prev) => prev.filter((i) => i._id !== removing._id));
@@ -140,10 +142,10 @@ export default function InventoryPage() {
             const res = await fetch(`/api/inventory?id=${removing._id}`, { method: "DELETE" });
             const data = await res.json();
             if (data.success) fetchInventory();
-            else setItems((prev) => [...prev, removing]);
+            else setItems((prev) => { const next = [...prev]; next.splice(removingIdx, 0, removing); return next; });
         } catch (error) {
             console.error("Failed to delete item:", error);
-            setItems((prev) => [...prev, removing]);
+            setItems((prev) => { const next = [...prev]; next.splice(removingIdx, 0, removing); return next; });
         }
     };
 

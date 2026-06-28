@@ -84,14 +84,15 @@ const FULL_PROMPT =
     '(e.g. "1 L", "500 ml", "200 g", "1 Litre"), MRP/price, brand, product name and variant. ' +
     'Do not summarise, translate, or omit anything. Output only the transcribed text, no commentary.';
 // Back: ask only for the net quantity (size). Grounded — copy printed digits,
-// never compute or infer (a promo "50 g EXTRA" must stay "50 g EXTRA", not become
-// "100 g"). Price is deliberately NOT asked: a 2B model fabricates a plausible
-// MRP even when none is printed, and a wrong price is worse than no price — so
-// price stays with parseLabel's regex / manual entry.
+// never compute or infer. "Ignore serving size" added explicitly because Gemini
+// sometimes returns the nutrition-table per-portion value instead of the total.
+// Price is deliberately NOT asked: a 2B model fabricates a plausible MRP even
+// when none is printed, and a wrong price is worse than no price.
 const BACK_PROMPT =
-    'What is the net quantity (net weight or volume) printed on this package? ' +
-    'Examples: "200 g", "1 L", "39 g", "250 ml". Copy it exactly as printed - do not calculate ' +
-    'or guess. If no net quantity is printed, reply exactly NONE. Output only the value, nothing else.';
+    'What is the total net quantity (net weight or volume) of the whole package? ' +
+    'Examples: "200 g", "1 L", "39 g", "250 ml". Copy it exactly as printed — do not calculate, ' +
+    'convert, or guess. Ignore serving size and per-portion figures — return only the total package amount. ' +
+    'If no net quantity is printed, reply exactly NONE. Output only the value, nothing else.';
 
 /**
  * Read a product label with the vision model.
@@ -151,18 +152,32 @@ export async function readLabelText(image: ArrayBuffer, mode: 'full' | 'back' = 
  * (price always '' — see BACK_PROMPT) with quantity copied verbatim from the pack,
  * or '' when none is printed. Returns null only if the reader was unreachable.
  */
-// A real net quantity is a number + unit, short. The 2B sometimes ignores the
-// "output only the value" instruction and returns a whole composition/marketing
-// paragraph that happens to contain a digit — reject anything that isn't clearly
-// size-shaped so a paragraph never becomes the size (it did: Evian/Germ stored a
-// 115-char blurb as their unit). Mirrors the client looksLikeSize guard.
-const SIZE_SHAPE = /\b\d+(?:[.,]\d+)?\s?(ml|l|ltr|litre|liter|cl|kg|g|gm|gms|gram|grams|mg|pcs?|pieces?|x|n|units?|caps?|capsules?|tablets?|sachets?)\b/i;
+// Capture groups: (numeric)(unit) — used by largestSize to pick the net weight
+// when multiple figures appear (e.g. "Serving 13 g / Net Wt 39 g").
+const SIZE_RE = /\b(\d+(?:[.,]\d+)?)\s?(ml|l|ltr|litre|liter|cl|kg|g|gm|gms|gram|grams|mg|pcs?|pieces?|x|n|units?|caps?|capsules?|tablets?|sachets?)\b/gi;
+// Base-unit multipliers for normalised comparison. g and ml are 1; larger
+// units scale up so "1 kg" beats "500 g" and "1 L" beats "200 ml".
+const UNIT_SCALE: Record<string, number> = {
+    mg: 0.001, g: 1, gm: 1, gms: 1, gram: 1, grams: 1, kg: 1000,
+    ml: 1, cl: 10, l: 1000, ltr: 1000, litre: 1000, liter: 1000,
+};
+function largestSize(raw: string): string {
+    const matches = [...raw.matchAll(SIZE_RE)];
+    if (matches.length === 0) return '';
+    if (matches.length === 1) return matches[0][0].trim();
+    // Multiple candidates — the total net weight is always the largest printed
+    // figure; serving size and promo add-ons ("+25 g extra") are smaller.
+    return matches
+        .map(m => ({ text: m[0].trim(), norm: parseFloat(m[1].replace(',', '.')) * (UNIT_SCALE[m[2].toLowerCase()] ?? 1) }))
+        .sort((a, b) => b.norm - a.norm)[0].text;
+}
 
 export async function readBackFields(image: ArrayBuffer): Promise<{ quantity: string; price: string } | null> {
     const raw = await readLabelText(image, 'back');
     if (raw == null) return null;
-    let quantity = raw.trim().replace(/^["']|["']$/g, '').trim();
-    // Accept only a short, size-shaped value; "NONE", prose, or a paragraph → ''.
-    if (quantity.length > 24 || !SIZE_SHAPE.test(quantity)) quantity = '';
+    const cleaned = raw.trim().replace(/^["']|["']$/g, '').trim();
+    // Extract all size-shaped tokens and pick the largest — net weight is always
+    // the largest printed figure on the pack.
+    const quantity = largestSize(cleaned);
     return { quantity, price: '' };
 }
