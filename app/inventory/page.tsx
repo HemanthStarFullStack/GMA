@@ -91,12 +91,10 @@ export default function InventoryPage() {
         const item = items.find((i) => i._id === id);
         if (!item) return;
         const idx = items.findIndex((i) => i._id === id);
-        // Optimistic: mirror the server — decrement if multi-pack, remove only the last.
-        if (item.quantity > 1) {
-            setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: i.quantity - 1 } : i));
-        } else {
-            setItems((prev) => prev.filter((i) => i._id !== id));
-        }
+        // Optimistic: remove immediately. fetchInventory() restores correct qty on
+        // success (~200ms later). For multi-pack items the server decrements rather
+        // than deletes, so the item reappears — the brief removal is imperceptible.
+        setItems((prev) => prev.filter((i) => i._id !== id));
         try {
             const actualDays = Math.max(
                 1,
@@ -122,21 +120,10 @@ export default function InventoryPage() {
 
             const data = await res.json();
             if (data.success) fetchInventory();
-            else {
-                // Revert optimistic change.
-                if (item.quantity > 1) {
-                    setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: item.quantity } : i));
-                } else {
-                    setItems((prev) => { const next = [...prev]; next.splice(idx, 0, item); return next; });
-                }
-            }
+            else setItems((prev) => { const next = [...prev]; next.splice(idx, 0, item); return next; });
         } catch (error) {
             console.error("Failed to log consumption:", error);
-            if (item.quantity > 1) {
-                setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: item.quantity } : i));
-            } else {
-                setItems((prev) => { const next = [...prev]; next.splice(idx, 0, item); return next; });
-            }
+            setItems((prev) => { const next = [...prev]; next.splice(idx, 0, item); return next; });
         }
     };
 
