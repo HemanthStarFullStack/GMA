@@ -185,6 +185,9 @@ export async function PATCH(request: Request) {
             entry.status = 'done';
         } else if (action === 'uncheck') {
             entry.status = 'pending';
+            // Clear boughtAt so a re-check adds to inventory again (user is saying
+            // they didn't actually buy it, so the guard should reset).
+            entry.boughtAt = null as unknown as Date;
         } else if (action === 'dismiss') {
             // Manual items have no auto-delete recovery path — dismissing one would
             // hide it permanently with no way to retrieve it.

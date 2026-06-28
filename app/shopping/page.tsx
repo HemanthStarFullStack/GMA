@@ -37,6 +37,13 @@ export default function ShoppingPage() {
     // back to the suggested restockQty until they touch it; their edits survive
     // list refreshes.
     const [qty, setQty] = useState<Record<string, number>>({});
+    const [toast, setToast] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!toast) return;
+        const t = setTimeout(() => setToast(null), 2500);
+        return () => clearTimeout(t);
+    }, [toast]);
 
     const getQty = (item: ListItem) => qty[item._id] ?? Math.max(1, item.restockQty || 1);
     const bumpQty = (item: ListItem, delta: number) =>
@@ -73,14 +80,36 @@ export default function ShoppingPage() {
         }
     };
 
-    const act = (id: string, action: "check" | "uncheck" | "dismiss", qtyToAdd?: number) =>
+    const act = (id: string, action: "uncheck" | "dismiss") =>
         withBusy(id, async () => {
             await fetch("/api/shopping-list", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, action, ...(qtyToAdd ? { qty: qtyToAdd } : {}) }),
+                body: JSON.stringify({ id, action }),
             });
         });
+
+    // Separate handler for "check" so we can show a toast when inventory is added.
+    const handleCheck = (item: ListItem) => {
+        const willAdd = item.source === "auto" && !!item.productId && !item.boughtAt;
+        const qtyToAdd = item.productId ? getQty(item) : undefined;
+        setBusy((s) => new Set(s).add(item._id));
+        fetch("/api/shopping-list", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: item._id, action: "check", ...(qtyToAdd ? { qty: qtyToAdd } : {}) }),
+        })
+            .then((r) => r.json())
+            .then((data) => {
+                if (willAdd && data.success) setToast(`Added ${qtyToAdd ?? 1}× ${item.name} to your pantry`);
+                else if (!data.success) setToast("Couldn't update — please try again");
+            })
+            .catch(() => setToast("Couldn't update — please try again"))
+            .finally(() => {
+                setBusy((s) => { const n = new Set(s); n.delete(item._id); return n; });
+                fetchList();
+            });
+    };
 
     const remove = (id: string) =>
         withBusy(id, async () => {
@@ -163,7 +192,7 @@ export default function ShoppingPage() {
                                 return (
                                     <div key={item._id} className="pantry-card flex items-center gap-3 p-3 rise">
                                         <button
-                                            onClick={() => act(item._id, "check", item.productId ? getQty(item) : undefined)}
+                                            onClick={() => handleCheck(item)}
                                             disabled={isBusy}
                                             title={item.productId ? `Got it — add ${getQty(item)} to inventory` : "Got it"}
                                             className="w-7 h-7 rounded-full border-2 border-line-strong flex items-center justify-center text-transparent hover:border-olive hover:text-olive transition-colors flex-shrink-0 disabled:opacity-50"
@@ -311,6 +340,12 @@ export default function ShoppingPage() {
                     </>
                 )}
             </main>
+
+            {toast && (
+                <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-ink text-paper rounded-xl shadow-lg text-sm font-medium pointer-events-none">
+                    {toast}
+                </div>
+            )}
         </div>
     );
 }
