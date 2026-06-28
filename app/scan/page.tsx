@@ -202,15 +202,22 @@ export default function ScanPage() {
 
     const onImageFile = async (file?: File) => {
         if (!file) return;
+        // Show instantly via blob URL; swap to server URL once upload finishes.
+        const preview = URL.createObjectURL(file);
+        const prevImage = form.imageUrl;
+        setForm((f) => ({ ...f, imageUrl: preview }));
         setUploadingImage(true);
         try {
             const fd = new FormData();
             fd.append("file", await toThumb(file), "photo.jpg");
             const res = await fetch("/api/upload", { method: "POST", body: fd });
             const data = await res.json();
+            URL.revokeObjectURL(preview);
             if (data.success) setForm((f) => ({ ...f, imageUrl: data.url }));
-            else setToast(data.message || "Couldn't upload that image.");
+            else { setForm((f) => ({ ...f, imageUrl: prevImage })); setToast(data.message || "Couldn't upload that image."); }
         } catch {
+            URL.revokeObjectURL(preview);
+            setForm((f) => ({ ...f, imageUrl: prevImage }));
             setToast("Couldn't upload that image.");
         } finally {
             setUploadingImage(false);

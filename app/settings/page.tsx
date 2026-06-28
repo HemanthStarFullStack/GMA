@@ -39,13 +39,19 @@ export default function SettingsPage() {
     const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        // Show instantly via blob URL; swap to server URL once upload finishes.
+        const preview = URL.createObjectURL(file);
+        const prevImage = image;
+        setImage(preview);
         setUploading(true);
         try {
             const fd = new FormData();
             fd.append("file", await toThumb(file, 400), "avatar.jpg");
             const res = await fetch("/api/upload", { method: "POST", body: fd });
             const data = await res.json();
+            URL.revokeObjectURL(preview);
             if (data.success) setImage(data.url);
+            else setImage(prevImage);
         } finally {
             setUploading(false);
             if (fileRef.current) fileRef.current.value = "";
