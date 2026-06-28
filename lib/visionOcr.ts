@@ -28,11 +28,11 @@ const FRONT_READER = process.env.FRONT_READER || (GEMINI_KEY ? 'gemini' : 'local
 // already burns its quota), each model a separate free-tier bucket.
 const GEMINI_READ_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
-async function geminiReadFull(b64: string): Promise<string | null> {
+async function geminiRead(b64: string, prompt: string): Promise<string | null> {
     if (!GEMINI_KEY) return null;
     const body = {
         contents: [{ role: 'user', parts: [
-            { text: FULL_PROMPT },
+            { text: prompt },
             { inline_data: { mime_type: 'image/jpeg', data: b64 } },
         ] }],
         // thinkingBudget 0: no extended thinking (it eats the output budget and
@@ -103,8 +103,8 @@ export async function readLabelText(image: ArrayBuffer, mode: 'full' | 'back' = 
     const b64 = Buffer.from(image).toString('base64');
     // Front: cloud reader first (fast, frees the GPU). On miss fall through to the
     // local VLM below; if that's down too the caller drops to the CPU sidecar.
-    if (mode === 'full' && FRONT_READER === 'gemini') {
-        const g = await geminiReadFull(b64);
+    if (FRONT_READER === 'gemini') {
+        const g = await geminiRead(b64, mode === 'back' ? BACK_PROMPT : FULL_PROMPT);
         if (g) return g;
         console.warn('[reader] Gemini returned nothing — trying local VLM');
     }
