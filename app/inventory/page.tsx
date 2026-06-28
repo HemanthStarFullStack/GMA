@@ -91,10 +91,24 @@ export default function InventoryPage() {
         const item = items.find((i) => i._id === id);
         if (!item) return;
         const idx = items.findIndex((i) => i._id === id);
-        // Optimistic: remove immediately. fetchInventory() restores correct qty on
-        // success (~200ms later). For multi-pack items the server decrements rather
-        // than deletes, so the item reappears — the brief removal is imperceptible.
-        setItems((prev) => prev.filter((i) => i._id !== id));
+        const multiPack = item.quantity > 1;
+        // Mirror server exactly: qty > 1 → decrement in place; last pack → remove.
+        // No fetchInventory() on success — the optimistic update IS the final state,
+        // so there's no re-render / rise-animation flicker after every consume.
+        if (multiPack) {
+            setItems((prev) =>
+                prev.map((i) => i._id === id ? { ...i, quantity: i.quantity - 1, purchaseDate: new Date().toISOString() } : i),
+            );
+        } else {
+            setItems((prev) => prev.filter((i) => i._id !== id));
+        }
+        const revert = () => {
+            if (multiPack) {
+                setItems((prev) => prev.map((i) => i._id === id ? item : i));
+            } else {
+                setItems((prev) => { const next = [...prev]; next.splice(idx, 0, item); return next; });
+            }
+        };
         try {
             const actualDays = Math.max(
                 1,
@@ -119,11 +133,10 @@ export default function InventoryPage() {
             });
 
             const data = await res.json();
-            if (data.success) fetchInventory();
-            else setItems((prev) => { const next = [...prev]; next.splice(idx, 0, item); return next; });
+            if (!data.success) revert();
         } catch (error) {
             console.error("Failed to log consumption:", error);
-            setItems((prev) => { const next = [...prev]; next.splice(idx, 0, item); return next; });
+            revert();
         }
     };
 
@@ -143,8 +156,7 @@ export default function InventoryPage() {
         try {
             const res = await fetch(`/api/inventory?id=${removing._id}`, { method: "DELETE" });
             const data = await res.json();
-            if (data.success) fetchInventory();
-            else setItems((prev) => { const next = [...prev]; next.splice(removingIdx, 0, removing); return next; });
+            if (!data.success) setItems((prev) => { const next = [...prev]; next.splice(removingIdx, 0, removing); return next; });
         } catch (error) {
             console.error("Failed to delete item:", error);
             setItems((prev) => { const next = [...prev]; next.splice(removingIdx, 0, removing); return next; });
@@ -171,8 +183,7 @@ export default function InventoryPage() {
                 return;
             }
             const data = await res.json();
-            if (data.success) fetchInventory();
-            else setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: i.quantity - delta } : i));
+            if (!data.success) setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: i.quantity - delta } : i));
         } catch (error) {
             console.error("Failed to adjust quantity:", error);
             setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: i.quantity - delta } : i));
