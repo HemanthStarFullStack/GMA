@@ -63,12 +63,12 @@ export default function ScanPage() {
 
     const handlePhoto = async (image: Blob) => {
         setLookingUp(true);
-        // The shot doubles as the product photo — upload it alongside OCR so it
-        // costs no extra wait. Best-effort: a failed upload just leaves no image.
+        // Local blob URL shows the photo immediately (before the upload round-trip).
+        // Swapped for the server URL once the upload resolves.
+        const localPreview = URL.createObjectURL(image);
+
         const uploadPromise = (async () => {
             try {
-                // Store a small thumbnail, not the full 1600px OCR capture (which
-                // is still sent to product-vision below at full detail).
                 const thumb = await toThumb(image);
                 const fd = new FormData();
                 fd.append("file", thumb, "label.jpg");
@@ -79,57 +79,55 @@ export default function ScanPage() {
                 return null;
             }
         })();
+
+        // Called right after setForm so the swap lands on the freshly-set state.
+        const finalizeImage = () =>
+            uploadPromise.then((url) => {
+                URL.revokeObjectURL(localPreview);
+                if (url) setForm((f) => ({ ...f, imageUrl: url }));
+            });
+
         try {
             const visRes = await fetch("/api/product-vision", { method: "POST", body: image });
             const vis = await visRes.json();
-            const imageUrl = await uploadPromise;
             const d = vis.data || {};
 
-            // Back/nutrition panel: name & brand aren't here, but quantity and
-            // price often are — fill what we can, guide user to add the name.
             if (d.backPanel) {
                 const filled = [d.quantity && `size ${d.quantity}`, d.price && `price ${d.price}`].filter(Boolean).join(", ");
                 setToast(`Back panel — ${filled ? `${filled} filled in.` : ""} Snap the front for name & brand.`);
-                setForm({ ...emptyForm(), unit: d.quantity || "", price: d.price || "", source: "ocr", imageUrl });
+                setForm({ ...emptyForm(), unit: d.quantity || "", price: d.price || "", source: "ocr", imageUrl: localPreview });
+                finalizeImage();
                 setLowConf(new Set());
                 setMode("manual");
                 return;
             }
             if (!vis.success || !d.name) {
                 setToast("Couldn't read the label — type the details and it'll be saved.");
-                setForm({ ...emptyForm(), unit: d.quantity || "", price: d.price || "", source: "ocr", imageUrl });
+                setForm({ ...emptyForm(), unit: d.quantity || "", price: d.price || "", source: "ocr", imageUrl: localPreview });
+                finalizeImage();
                 setLowConf(new Set());
                 setMode("manual");
                 return;
             }
-            // Show the editable form the instant OCR returns — don't block it on
-            // the duration estimate (Gemini, up to a few seconds). The estimate
-            // fills in async via autoEstimate; until then the field shows the
-            // 14-day default with the Re-estimate spinner running.
             setForm({
                 ...emptyForm(),
                 name: d.name,
                 brand: d.brand || "",
                 flavor: d.flavor || "",
-                // No size read → leave blank so the field shows its placeholder
-                // ("e.g. 500 g") instead of the literal "units" (which reads as a
-                // bogus weight). Storage re-applies the "units" default on save.
                 unit: d.quantity || "",
                 price: d.price || "",
-                // Seed category from the structurer so the duration predictor
-                // refines a real guess instead of starting from "Other".
                 category: d.category && CATEGORIES.includes(d.category) ? d.category : "Other",
                 source: "ocr",
-                imageUrl,
+                imageUrl: localPreview,
             });
-            // Highlight any field the structurer was unsure about, so the user
-            // knows what to double-check.
+            finalizeImage();
             setLowConf(lowConfFields(d.confidence));
             setMode("confirm");
             void autoEstimate(d);
         } catch {
             setToast("OCR unavailable — add the product manually.");
-            setForm({ ...emptyForm(), source: "ocr", imageUrl: await uploadPromise });
+            setForm({ ...emptyForm(), source: "ocr", imageUrl: localPreview });
+            finalizeImage();
             setLowConf(new Set());
             setMode("manual");
         } finally {
