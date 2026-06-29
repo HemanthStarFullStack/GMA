@@ -104,23 +104,23 @@ export default function GmaTour() {
             };
             const p: TourPhase = phase; // capture for closures
 
+            // `skip` = user bailed out (X, Esc, overlay click) OR the tour reached its
+            // natural end. Both must leave the SAME clean account: demo data wiped,
+            // tourCompleted=true. Only an explicit "Continue →" on a non-final page
+            // advances to the next phase.
             const end = (skip: boolean) => {
                 if (runId.current !== id) return;
                 dRef.current = null;
-                if (skip) {
-                    clearPhase();
-                    // Await cleanup so tourCompleted=true and demo data are gone BEFORE
-                    // the next page load reads them — prevents the tour from restarting.
-                    // Hard reload instead of router.push: flushes the Next.js Router
-                    // Cache so every cached demo page (inventory, shopping, analytics…)
-                    // is evicted; a soft push would still serve stale cached demo content
-                    // when the user navigates back to those pages.
-                    cleanup().finally(() => { window.location.href = "/"; });
-                    return;
-                }
-                const next = NEXT_PHASE[p];
-                if (next) { setPhase(userId, next); router.push(PHASE_PATHS[next]); }
-                else { clearPhase(); cleanup(); }
+                const next = skip ? undefined : NEXT_PHASE[p];
+                if (next) { setPhase(userId, next); router.push(PHASE_PATHS[next]); return; }
+                // Finished or skipped → wipe demo + mark complete, THEN hard reload home.
+                // Await cleanup so tourCompleted=true and demo data are gone before the
+                // next load reads them (prevents a restart). Hard reload (not router.push)
+                // flushes the Next.js Router Cache so every cached demo page (inventory,
+                // shopping, analytics…) is evicted — a soft push would serve stale demo
+                // content on back-nav.
+                clearPhase();
+                cleanup().finally(() => { window.location.href = "/"; });
             };
 
             const stepsMap: Record<TourPhase, object[]> = {
@@ -160,7 +160,10 @@ export default function GmaTour() {
             if (!steps?.length) { end(false); return; }
             if (runId.current !== id) return;
 
-            let skipped = false;
+            // Only an explicit Next/Continue press flips this. Any other way the
+            // popover dies — X button, Esc, overlay click — leaves it false, so
+            // onDestroyed routes through the skip-and-cleanup path.
+            let advanced = false;
             const d = driver({
                 showProgress: true,
                 allowClose: true,
@@ -170,8 +173,17 @@ export default function GmaTour() {
                 prevBtnText: "Back",
                 doneBtnText: NEXT_PHASE[p] ? "Continue →" : "Start fresh →",
                 steps,
-                onCloseClick: () => { skipped = true; },
-                onDestroyed: () => end(skipped),
+                // Defining these hooks overrides driver's defaults, so we drive it
+                // ourselves. Last step → advance to the next page (or finish);
+                // intermediate → move within this page's steps.
+                onNextClick: () => {
+                    if (d.isLastStep()) { advanced = true; d.destroy(); }
+                    else d.moveNext();
+                },
+                // X button → skip. Destroy without setting `advanced` so cleanup runs.
+                // (Esc / overlay click skip the same way via onDestroyed.)
+                onCloseClick: () => { d.destroy(); },
+                onDestroyed: () => end(!advanced),
             });
             dRef.current = d;
             d.drive();
