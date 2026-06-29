@@ -16,7 +16,6 @@ interface ListItem {
     reason: "low_stock" | "out_of_stock" | "manual";
     source: "auto" | "manual";
     status: "pending" | "done" | "dismissed";
-    restockQty: number;
     boughtAt: string | null;
 }
 
@@ -35,9 +34,8 @@ export default function ShoppingPage() {
     const [adding, setAdding] = useState(false);
     const [showDone, setShowDone] = useState(false);
     const [showDismissed, setShowDismissed] = useState(false);
-    // Per-item rebuy quantity the user can dial before ticking "Got it". Falls
-    // back to the suggested restockQty until they touch it; their edits survive
-    // list refreshes.
+    // Per-item rebuy quantity the user dials before ticking "Got it"; defaults to
+    // 1. Their edits survive list refreshes.
     const [qty, setQty] = useState<Record<string, number>>({});
     const [toast, setToast] = useState<string | null>(null);
 
@@ -47,10 +45,7 @@ export default function ShoppingPage() {
         return () => clearTimeout(t);
     }, [toast]);
 
-    // Default the rebuy count to 1 — the user dials up if they want more. (We used
-    // to default to restockQty/peakQty, but that high-water mark inflated easily and
-    // suggested absurd amounts like 8.) restockQty is still used server-side to flag
-    // low stock; it just no longer drives this stepper's default.
+    // Rebuy count defaults to 1; the user dials up if they want more.
     const getQty = (item: ListItem) => qty[item._id] ?? 1;
     const bumpQty = (item: ListItem, delta: number) =>
         setQty((q) => ({ ...q, [item._id]: Math.max(1, Math.min(99, getQty(item) + delta)) }));

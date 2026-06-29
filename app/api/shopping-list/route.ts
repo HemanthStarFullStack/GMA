@@ -52,10 +52,6 @@ async function autoSync(userId: string) {
                 name: p.name,
                 reason: p.status === 'out_of_stock' ? 'out_of_stock' : 'low_stock',
             };
-            // In-stock low items carry a live peak (rebuy hint). Out-of-stock items
-            // have no live row, so their restockQty is set at consume time — don't
-            // overwrite it here (forecast can't recover it from logs).
-            if (p.status === 'in_stock' && p.restockQty && p.restockQty > 1) set.restockQty = p.restockQty;
             return ShoppingList.updateOne(
                 { userId, productId: p.productId, source: 'auto' },
                 {

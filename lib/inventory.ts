@@ -31,9 +31,6 @@ export async function addToInventory(
         const now = Date.now();
         existing.purchaseDate = new Date(Math.round((oldT * oldQty + now * qty) / (oldQty + qty)));
         existing.quantity = oldQty + qty;
-        // Remember the high-water mark so the shopping list can suggest rebuying
-        // the same amount once this lot runs out.
-        existing.peakQty = Math.max(existing.peakQty ?? oldQty, existing.quantity);
         await existing.save();
         return existing;
     }
@@ -48,7 +45,6 @@ export async function addToInventory(
         userId,
         productId: barcode,
         quantity: qty,
-        peakQty: qty,
         unit,
         purchaseDate: new Date(),
         status: 'active',

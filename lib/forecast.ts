@@ -23,7 +23,6 @@ export interface ProductForecast {
     unit: string;
     status: 'in_stock' | 'out_of_stock';
     currentStock: number;
-    restockQty?: number; // peak packs held — the rebuy count to suggest (in-stock items only)
     purchaseDate: Date | null;
     rows?: { purchaseDate: Date; qty: number }[];
     // Best per-pack duration estimate (blended history + catalogue, or just the
@@ -106,7 +105,6 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
                 unit: item.unit || d.defaultUnit,
                 status: 'in_stock',
                 currentStock: 0,
-                restockQty: 0,
                 purchaseDate: item.purchaseDate,
                 rows: [],
                 consumptionHistory: { timesConsumed: 0, averageDurationDays: 0, lastConsumed: null },
@@ -115,8 +113,6 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
         }
         const entry = map.get(id);
         entry.currentStock += item.quantity;
-        // Largest single stocking across this product's lots = the rebuy hint.
-        entry.restockQty = Math.max(entry.restockQty ?? 0, item.peakQty ?? item.quantity);
         entry.rows.push({ purchaseDate: item.purchaseDate, qty: item.quantity });
     }
 
@@ -211,15 +207,14 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
     return result;
 }
 
-/** True when a product needs restocking. */
+/**
+ * True when a product needs restocking. One plain, visible rule: you're out (0)
+ * or down to your last pack (1). The run-out forecast (predictions) is shown on
+ * Analytics but deliberately does NOT drive the shopping list — that coupling made
+ * the list unpredictable ("why is this here?") and caused subtle bugs.
+ */
 export function isLow(p: ProductForecast): boolean {
-    if (p.status === 'out_of_stock') return true;
-    if (p.predictions?.needsRestock) return true;
-    // Last pack remaining when the user's habit is to keep two or more (peakQty
-    // on the current lot). Surfaces the restock prompt before the 7-day forecast
-    // window opens — e.g. "I had 2 oats packs, I used one, remind me to restock."
-    if (p.currentStock === 1 && (p.restockQty ?? 0) >= 2) return true;
-    return false;
+    return p.currentStock <= 1;
 }
 
 /** The subset of a user's products that need restocking. */

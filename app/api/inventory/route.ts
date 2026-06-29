@@ -167,9 +167,6 @@ export async function PATCH(request: Request) {
             row.purchaseDate = new Date(Math.round((oldT * row.quantity + now.getTime() * delta) / (row.quantity + delta)));
         }
         row.quantity += delta;
-        // Track the lot's high-water mark on top-ups so the shopping list can
-        // later suggest rebuying the same amount once it runs out.
-        if (delta > 0) row.peakQty = Math.max(row.peakQty ?? row.quantity, row.quantity);
         await row.save();
 
         return NextResponse.json({ success: true, message: 'Quantity updated', data: row });

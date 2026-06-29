@@ -98,11 +98,7 @@ export async function POST(request: Request) {
                 row.purchaseDate = new Date();
                 await row.save();
             } else {
-                // Last pack of this lot. Capture how many were stocked at peak
-                // BEFORE the row is gone, so the shopping list can suggest rebuying
-                // the same amount (the row's quantity drains to 1, so peakQty — not
-                // the current count — is the right rebuy hint).
-                const rebuyQty = Math.max(1, row.peakQty ?? row.quantity);
+                // Last pack of this lot → it's now out of stock.
                 await row.deleteOne();
                 // Only flag a restock if this product has no other active lots left.
                 const stillStocked = await Inventory.countDocuments({
@@ -112,13 +108,13 @@ export async function POST(request: Request) {
                 });
                 if (stillStocked === 0) {
                     const prod = await Product.findOne({ barcode: row.productId }).select('name').lean() as { name?: string } | null;
-                    // Upsert the auto entry now (autoSync will keep it while low). It
-                    // owns the rebuy quantity; autoSync never overwrites restockQty for
-                    // out-of-stock items (it has no live row to read it from).
+                    // Add it to the shopping list right away (autoSync keeps it while
+                    // out of stock). Rebuy quantity defaults to 1 — the user dials it
+                    // on the list if they want more.
                     await ShoppingList.updateOne(
                         { userId: session.user.id, productId: row.productId, source: 'auto' },
                         {
-                            $set: { name: prod?.name || `Product ${row.productId.slice(0, 8)}`, reason: 'out_of_stock', restockQty: rebuyQty, status: 'pending' },
+                            $set: { name: prod?.name || `Product ${row.productId.slice(0, 8)}`, reason: 'out_of_stock', status: 'pending' },
                             $setOnInsert: { userId: session.user.id, productId: row.productId, source: 'auto' },
                         },
                         { upsert: true },
