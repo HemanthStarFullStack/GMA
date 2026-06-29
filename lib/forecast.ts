@@ -43,6 +43,21 @@ export interface ProductForecast {
     } | null;
 }
 
+// A real pack lasts at least this fraction of its catalogue duration estimate.
+// Anything shorter is treated as a mis-tap / spammed consume and ignored when
+// learning the rate. Filtering by VALUE (not tap timing) makes the forecast
+// robust no matter how fast OR slow the − button is spammed.
+const PLAUSIBLE_MIN_FRACTION = 0.2;
+
+/**
+ * Is this logged duration plausibly a real pack lifetime (vs spam)? Without a
+ * catalogue estimate there's nothing to compare against, so accept it.
+ */
+function isPlausibleDuration(durationDays: number, catalogueAvg: number): boolean {
+    if (!catalogueAvg || catalogueAvg <= 0) return durationDays >= 1;
+    return durationDays >= Math.max(1, Math.round(catalogueAvg * PLAUSIBLE_MIN_FRACTION));
+}
+
 /** Build per-product stock + consumption + run-out forecasts for a user. */
 export async function buildForecasts(userId: string): Promise<ProductForecast[]> {
     await connectDB();
@@ -108,6 +123,9 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
     // Fold in consumption history.
     for (const log of consumptionLogs) {
         const id = log.productId;
+        // Drop implausibly short durations (mis-taps / spammed consumes) so they
+        // can't collapse the learned rate — independent of how the taps were timed.
+        if (!isPlausibleDuration(log.durationDays || 0, productMap.get(id)?.averageDuration || 0)) continue;
         if (!map.has(id)) {
             const d = detailsFor(id);
             map.set(id, {

@@ -141,32 +141,25 @@ export async function PATCH(request: Request) {
 
         const now = new Date();
         const DAY = 86_400_000;
-        // A − within this window of the lot's last change is a mis-tap / rapid test
-        // tap, not a real consume. Skipping the log + clock reset stops bursts of
-        // junk ~1-day durations from collapsing the run-out forecast (which then
-        // flags items as low while stock remains).
-        // ponytail: fixed 2-min window; widen if genuine fast-consume items get logged.
-        const MISTAP_MS = 2 * 60_000;
         if (delta < 0) {
             // Using a unit: log it (so partial use feeds rate-learning, not just
             // pack-finishes) and reset the lot clock so the NEXT decrement measures
             // the gap between uses = days one unit lasts. durationDays = time since
             // the last use of this lot. delta is -1 from the stepper; a larger drop
             // still records one event (good enough — the UI only sends ±1).
-            const elapsed = now.getTime() - new Date(row.purchaseDate).getTime();
-            if (elapsed >= MISTAP_MS) {
-                const durationDays = Math.max(1, Math.round(elapsed / DAY));
-                await ConsumptionLog.create({
-                    userId: session.user.id,
-                    productId: row.productId,
-                    inventoryId: String(row._id),
-                    consumedDate: now,
-                    durationDays,
-                    surveyCompleted: false,
-                    isDemo: row.isDemo,
-                });
-                row.purchaseDate = now;
-            }
+            // Spam protection lives in the forecast (it ignores implausibly-short
+            // durations by value), so it holds no matter how the taps are timed.
+            const durationDays = Math.max(1, Math.round((now.getTime() - new Date(row.purchaseDate).getTime()) / DAY));
+            await ConsumptionLog.create({
+                userId: session.user.id,
+                productId: row.productId,
+                inventoryId: String(row._id),
+                consumedDate: now,
+                durationDays,
+                surveyCompleted: false,
+                isDemo: row.isDemo,
+            });
+            row.purchaseDate = now;
         } else {
             // Topping up: age the lot date toward now, weighted by new vs. existing
             // units, so fresh stock doesn't read as old (same blend as addToInventory).
