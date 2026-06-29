@@ -24,6 +24,12 @@ export const dynamic = 'force-dynamic';
 
 const MAX_NAME = 100;
 
+// Deterministic catalogue id for a hand-typed item, so re-adding the same name
+// resolves to one shared Product instead of duplicating it. Mirrors the scan
+// page's manual-entry id scheme (MANUAL-…).
+const manualId = (name: string) =>
+    `MANUAL-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)}`;
+
 async function requireUser() {
     const session = await auth();
     return session?.user?.id ?? null;
@@ -145,8 +151,34 @@ export async function POST(request: Request) {
         }
 
         await connectDB();
+
+        // A hand-typed item is a real product, exactly like a manual scan entry:
+        // upsert a catalogue Product (no separate model) and tie the list entry to
+        // it via productId, so ticking "Got it" adds it to inventory like any other
+        // product. $setOnInsert leaves a richer existing entry (e.g. later scanned
+        // with brand/size) untouched.
+        const productId = manualId(name);
+        await Product.findOneAndUpdate(
+            { barcode: productId },
+            {
+                $setOnInsert: {
+                    barcode: productId,
+                    name,
+                    category: 'Other',
+                    defaultUnit: 'units',
+                    averageDuration: 14,
+                    addedBy: 'manual',
+                    source: 'manual',
+                    aiPredicted: false,
+                    isDemo: false,
+                },
+            },
+            { upsert: true },
+        );
+
         const entry = await ShoppingList.create({
             userId,
+            productId,
             name,
             reason: 'manual',
             source: 'manual',
@@ -180,14 +212,13 @@ export async function PATCH(request: Request) {
         if (!entry) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
         if (action === 'check') {
-            // "Got it": re-add auto/catalogue items to inventory exactly once,
-            // restocking the quantity the user dialed in (falls back to the
-            // suggested restockQty, then 1). boughtAt guards against a double add
-            // if they uncheck and re-check.
-            if (entry.source === 'auto' && entry.productId && !entry.boughtAt) {
-                const addQty = Math.max(1, reqQty || entry.restockQty || 1);
+            // "Got it": add the item to inventory exactly once, in the quantity the
+            // user dialed (default 1). Works for any entry tied to a product — auto
+            // (forecast) or manual (hand-typed, now a real catalogue product).
+            // boughtAt guards against a double add if they uncheck and re-check.
+            if (entry.productId && !entry.boughtAt) {
+                const addQty = Math.max(1, reqQty || 1);
                 await addToInventory(userId, entry.productId, addQty);
-                entry.restockQty = addQty; // remember what they actually bought
                 entry.boughtAt = new Date();
             }
             entry.status = 'done';

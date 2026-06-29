@@ -93,7 +93,7 @@ export default function ShoppingPage() {
 
     // Separate handler for "check" so we can show a toast when inventory is added.
     const handleCheck = (item: ListItem) => {
-        const willAdd = item.source === "auto" && !!item.productId && !item.boughtAt;
+        const willAdd = !!item.productId && !item.boughtAt;
         const qtyToAdd = item.productId ? getQty(item) : undefined;
         setBusy((s) => new Set(s).add(item._id));
         fetch("/api/shopping-list", {
