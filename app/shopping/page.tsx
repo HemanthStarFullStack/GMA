@@ -47,7 +47,11 @@ export default function ShoppingPage() {
         return () => clearTimeout(t);
     }, [toast]);
 
-    const getQty = (item: ListItem) => qty[item._id] ?? Math.max(1, item.restockQty || 1);
+    // Default the rebuy count to 1 — the user dials up if they want more. (We used
+    // to default to restockQty/peakQty, but that high-water mark inflated easily and
+    // suggested absurd amounts like 8.) restockQty is still used server-side to flag
+    // low stock; it just no longer drives this stepper's default.
+    const getQty = (item: ListItem) => qty[item._id] ?? 1;
     const bumpQty = (item: ListItem, delta: number) =>
         setQty((q) => ({ ...q, [item._id]: Math.max(1, Math.min(99, getQty(item) + delta)) }));
 
