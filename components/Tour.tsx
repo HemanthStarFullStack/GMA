@@ -39,6 +39,12 @@ export default function GmaTour() {
     const router = useRouter();
     const dRef = useRef<ReturnType<typeof driver> | null>(null);
     const runId = useRef(0);
+    // True only while the tour itself is driving a navigation (start, or advance to
+    // the next phase). Lets us tell "the tour brought me to this page" from "the user
+    // manually navigated to a tour page while a stale phase lingered in localStorage".
+    // Without this, an abandoned tour re-pops its full-screen overlay on revisit and
+    // blocks every click on the page.
+    const advancing = useRef(false);
 
     useEffect(() => {
         if (status !== "authenticated") return;
@@ -61,6 +67,7 @@ export default function GmaTour() {
                     const json = await res.json();
                     if (!json?.success || json?.data?.tourCompleted) return;
                     setPhase(userId, "home");
+                    advancing.current = true; // the tour is starting itself
                     phase = "home";
                     // Seed demo data and WAIT for it — the tour is the sole seeder, so
                     // once this resolves every product page has data to highlight.
@@ -74,6 +81,17 @@ export default function GmaTour() {
             if (!phase) return;
             if (PHASE_PATHS[phase] !== pathname) return;
             if (runId.current !== id) return;
+
+            // We're on the phase's page. If the tour didn't drive us here, the user
+            // manually navigated to a tour page with a stale phase = abandoned tour.
+            // Clear it (and wipe demo / mark complete) instead of popping the overlay,
+            // which would block every click on the page. Otherwise consume the flag.
+            if (!advancing.current) {
+                clearPhase();
+                cleanup();
+                return;
+            }
+            advancing.current = false;
 
             // Product pages fetch their data on mount — wait for the actual item to
             // render (up to 4s) before building steps, so the per-page item highlight
@@ -112,7 +130,7 @@ export default function GmaTour() {
                 if (runId.current !== id) return;
                 dRef.current = null;
                 const next = skip ? undefined : NEXT_PHASE[p];
-                if (next) { setPhase(userId, next); router.push(PHASE_PATHS[next]); return; }
+                if (next) { advancing.current = true; setPhase(userId, next); router.push(PHASE_PATHS[next]); return; }
                 // Finished or skipped → wipe demo + mark complete, THEN hard reload home.
                 // Await cleanup so tourCompleted=true and demo data are gone before the
                 // next load reads them (prevents a restart). Hard reload (not router.push)
