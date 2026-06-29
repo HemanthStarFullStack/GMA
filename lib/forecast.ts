@@ -123,9 +123,10 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
     // Fold in consumption history.
     for (const log of consumptionLogs) {
         const id = log.productId;
-        // Drop implausibly short durations (mis-taps / spammed consumes) so they
-        // can't collapse the learned rate — independent of how the taps were timed.
-        if (!isPlausibleDuration(log.durationDays || 0, productMap.get(id)?.averageDuration || 0)) continue;
+        // The product must still appear in the forecast even if EVERY one of its
+        // logs is a mis-tap — otherwise a fully-consumed item would vanish (its only
+        // proof of existence is its logs) and drop off the shopping list. So the
+        // plausibility filter gates only the LEARNED RATE below, not existence.
         if (!map.has(id)) {
             const d = detailsFor(id);
             map.set(id, {
@@ -140,12 +141,15 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
             });
         }
         const product = map.get(id);
-        product.consumptionHistory.timesConsumed += 1;
-        product.consumptionHistory.averageDurationDays += log.durationDays || 0;
         const logDate = new Date(log.consumedDate);
         if (!product.consumptionHistory.lastConsumed || logDate > new Date(product.consumptionHistory.lastConsumed)) {
             product.consumptionHistory.lastConsumed = log.consumedDate;
         }
+        // Implausibly short durations (mis-taps / spammed consumes) don't feed the
+        // learned rate — independent of how the taps were timed.
+        if (!isPlausibleDuration(log.durationDays || 0, productMap.get(id)?.averageDuration || 0)) continue;
+        product.consumptionHistory.timesConsumed += 1;
+        product.consumptionHistory.averageDurationDays += log.durationDays || 0;
     }
 
     const result: ProductForecast[] = Array.from(map.values()).map((product) => {
