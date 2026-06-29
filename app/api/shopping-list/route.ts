@@ -70,12 +70,19 @@ async function autoSync(userId: string) {
 
 const REASON_RANK: Record<string, number> = { out_of_stock: 0, low_stock: 1, manual: 2 };
 
-export async function GET() {
+export async function GET(request: Request) {
     try {
         const userId = await requireUser();
         if (!userId) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
         await connectDB();
+
+        // Lightweight count used by the home badge — no autoSync, just a fast query.
+        if (new URL(request.url).searchParams.has('count')) {
+            const count = await ShoppingList.countDocuments({ userId, status: 'pending' });
+            return NextResponse.json({ success: true, count });
+        }
+
         await autoSync(userId);
 
         // Return all statuses so the client can show a Dismissed section where

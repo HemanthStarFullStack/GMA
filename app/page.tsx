@@ -1,16 +1,15 @@
 import Link from "next/link";
-import { Camera, Package, History, Settings, BarChart3, ArrowRight, ShoppingCart } from "lucide-react";
+import { Camera, Package, History, Settings, BarChart3, ArrowRight } from "lucide-react";
 import { auth } from "@/auth";
 import UserMenu from "@/components/UserMenu";
 import HeroCard, { type HeroItem } from "@/components/HeroCard";
-import { ShoppingList } from "@/lib/models";
-import { buildForecasts, isLow } from "@/lib/forecast";
+import { buildForecasts } from "@/lib/forecast";
+import ShoppingTile from "@/components/ShoppingTile";
 
 export default async function HomePage() {
     const session = await auth();
 
     let heroItems: HeroItem[] = [];
-    let lowCount = 0;
 
     if (session?.user?.id) {
         const userId = session.user.id;
@@ -31,22 +30,6 @@ export default async function HomePage() {
                 .sort((a, b) => a.daysLeft - b.daysLeft)
                 .slice(0, 5);
 
-            // Badge = low items not yet acted on (pending).
-            // Exclude both 'dismissed' (user skipped) and 'done' (user bought it).
-            // 'done' items are still isLow if stock is still thin after the purchase,
-            // but they live in the collapsed "Got it" section of the shopping list —
-            // counting them makes the badge disagree with what the user sees as pending.
-            const lowItems = forecasts.filter(isLow);
-            if (lowItems.length > 0) {
-                const handled = await ShoppingList.find({
-                    userId,
-                    source: "auto",
-                    status: { $in: ["dismissed", "done"] },
-                    productId: { $in: lowItems.map((i) => i.productId) },
-                }).select("productId").lean();
-                const handledSet = new Set(handled.map((d) => d.productId as string));
-                lowCount = lowItems.filter((i) => !handledSet.has(i.productId)).length;
-            }
         } catch {
             // keep defaults — never 500 the landing page
         }
@@ -106,29 +89,7 @@ export default async function HomePage() {
                 </section>
 
                 <section className="pb-2 space-y-3">
-                    {/* Shopping list — doubles as the in-app restock reminder/badge. */}
-                    <Link
-                        href="/shopping"
-                        data-tour="home-shopping"
-                        className={`pantry-card p-4 flex items-center gap-4 group hover:-translate-y-0.5 transition-transform rise ${lowCount > 0 ? "border-terracotta/40 bg-terracotta/[0.04]" : ""}`}
-                        style={{ animationDelay: "160ms" }}
-                    >
-                        <div className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${lowCount > 0 ? "bg-terracotta/15 text-terracotta" : "bg-paper-2 text-ink-soft"}`}>
-                            <ShoppingCart className="w-6 h-6" strokeWidth={1.6} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <h3 className="font-display text-lg font-semibold text-ink">Shopping list</h3>
-                            <p className="text-xs text-ink-soft">
-                                {lowCount > 0
-                                    ? `${lowCount} item${lowCount === 1 ? "" : "s"} to restock`
-                                    : "What to buy"}
-                            </p>
-                        </div>
-                        {lowCount > 0 && (
-                            <span className="pill bg-terracotta text-paper font-semibold">{lowCount}</span>
-                        )}
-                        <ArrowRight className="w-5 h-5 text-ink-faint group-hover:text-ink transition-colors flex-shrink-0" />
-                    </Link>
+                    <ShoppingTile />
 
                     <div data-tour="home-tiles" className="grid grid-cols-2 gap-3">
                         {tiles.map(({ href, label, note, Icon, tint }, i) => (
