@@ -7,6 +7,8 @@ import { addToInventory } from '@/lib/inventory';
 import { auth } from '@/auth';
 import { serverError } from '@/lib/apiError';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Shopping list = what you still need to buy.
  *
@@ -111,6 +113,7 @@ export async function GET() {
                 return r !== 0 ? r : a.name.localeCompare(b.name);
             });
 
+        revalidatePath('/');
         return NextResponse.json({
             success: true,
             data: {

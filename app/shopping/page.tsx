@@ -51,7 +51,7 @@ export default function ShoppingPage() {
 
     const fetchList = useCallback(async () => {
         try {
-            const res = await fetch("/api/shopping-list");
+            const res = await fetch("/api/shopping-list", { cache: 'no-store' });
             const data = await res.json();
             if (data.success) setItems(data.data.items);
         } catch (error) {
