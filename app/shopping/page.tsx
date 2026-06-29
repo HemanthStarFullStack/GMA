@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { ShoppingCart, Plus, Minus, Check, X, Trash2, Loader2, Package, ChevronDown, ChevronRight } from "lucide-react";
 import BackButton from "@/components/BackButton";
 import UserMenu from "@/components/UserMenu";
@@ -26,6 +27,7 @@ const REASON: Record<string, { label: string; cls: string }> = {
 };
 
 export default function ShoppingPage() {
+    const router = useRouter();
     const [items, setItems] = useState<ListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState<Set<string>>(new Set());
@@ -71,6 +73,7 @@ export default function ShoppingPage() {
         try {
             await fn();
             await fetchList();
+            router.refresh(); // invalidate Router Cache so the home badge is fresh on back-nav
         } finally {
             setBusy((s) => {
                 const n = new Set(s);
@@ -108,6 +111,7 @@ export default function ShoppingPage() {
             .finally(() => {
                 setBusy((s) => { const n = new Set(s); n.delete(item._id); return n; });
                 fetchList();
+                router.refresh(); // invalidate Router Cache so the home badge is fresh on back-nav
             });
     };
 
@@ -129,6 +133,7 @@ export default function ShoppingPage() {
             if (res.ok) {
                 setName("");
                 await fetchList();
+                router.refresh(); // invalidate Router Cache so the home badge is fresh on back-nav
             }
         } finally {
             setAdding(false);
