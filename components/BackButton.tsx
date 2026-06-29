@@ -3,17 +3,13 @@
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-// Real "back": return to the previous page in history, not a hard-coded home
-// link. Falls back to `fallback` (default home) when there's no history to pop —
-// e.g. the page was opened directly from a fresh tab or a deep link.
+// Hub-and-spoke app: every page hangs off home, so "back" means go to `fallback`
+// (home by default), NOT retrace real history. router.back() could land the user
+// on a transient page — e.g. /scan after scan → inventory left it in history.
 export default function BackButton({ fallback = "/" }: { fallback?: string }) {
     const router = useRouter();
-    const onBack = () => {
-        if (typeof window !== "undefined" && window.history.length > 1) router.back();
-        else router.push(fallback);
-    };
     return (
-        <button type="button" onClick={onBack} className="flex items-center gap-2 text-ink-soft hover:text-ink">
+        <button type="button" onClick={() => router.push(fallback)} className="flex items-center gap-2 text-ink-soft hover:text-ink">
             <ArrowLeft className="w-5 h-5" />
             <span className="font-medium">Back</span>
         </button>

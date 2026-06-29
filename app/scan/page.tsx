@@ -353,7 +353,9 @@ export default function ScanPage() {
     const finish = (msg: string) => {
         setMode("done");
         setToast(msg);
-        setTimeout(() => router.push("/inventory"), 1100);
+        // replace, not push: scan is a transient step — drop it from history so
+        // back from inventory returns to home, not to the scanner.
+        setTimeout(() => router.replace("/inventory"), 1100);
     };
 
     const isConfirm = mode === "confirm";
