@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import connectDB from '@/lib/mongodb';
 import { ShoppingList, Product } from '@/lib/models';
 import { buildForecasts, isLow } from '@/lib/forecast';
@@ -146,6 +147,7 @@ export async function POST(request: Request) {
             status: 'pending',
         });
 
+        revalidatePath('/');
         return NextResponse.json({ success: true, data: { _id: String(entry._id) } });
     } catch (error: any) {
         return serverError('shopping-list', error);
@@ -198,6 +200,7 @@ export async function PATCH(request: Request) {
         }
         await entry.save();
 
+        revalidatePath('/');
         return NextResponse.json({ success: true });
     } catch (error: any) {
         return serverError('shopping-list', error);
@@ -221,6 +224,7 @@ export async function DELETE(request: Request) {
         const res = await ShoppingList.findOneAndDelete({ _id: id, userId });
         if (!res) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
+        revalidatePath('/');
         return NextResponse.json({ success: true });
     } catch (error: any) {
         return serverError('shopping-list', error);
