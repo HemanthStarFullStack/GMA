@@ -13,16 +13,113 @@ jobs:
   deploy:
     # Only deploy if the CI run succeeded.
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    runs-on: self-hosted
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 30
+    concurrency:
+      group: gma-production-deploy
+      cancel-in-progress: false
     steps:
-      - name: Pull latest and redeploy
-        # Use Windows PowerShell (always present on the runner); pwsh/Core may not be installed.
+      - name: Sync repository
+        id: sync
         shell: powershell
         run: |
+          $ErrorActionPreference = "Stop"
           Set-Location "C:\Users\91834\Desktop\GMA"
+          $before = git rev-parse HEAD
           git fetch origin main
           # Fast-forward only: fails safely (no data loss) if the working tree
-          # has diverged/uncommitted changes, instead of clobbering them.
+          # has diverged/tracked uncommitted changes, instead of clobbering them.
+          $dirtyTracked = git status --porcelain --untracked-files=no
+          if ($dirtyTracked) {
+            Write-Error "Tracked working tree changes exist on the deploy host. Refusing to deploy."
+          }
           git pull --ff-only origin main
-          docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d --build
+          $after = git rev-parse HEAD
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "before=$before"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "after=$after"
+
+      - name: Decide services to rebuild
+        id: services
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-Location "C:\Users\91834\Desktop\GMA"
+          $before = "${{ steps.sync.outputs.before }}"
+          $after = "${{ steps.sync.outputs.after }}"
+          $changed = @()
+          if ($before -ne $after) {
+            $changed = @(git diff --name-only $before $after)
+          }
+
+          $services = @("app")
+          if ($changed | Where-Object { $_ -match "^ocr/" }) {
+            $services += "ocr"
+          }
+          if ($changed | Where-Object { $_ -match "^(docker-compose\.yml|docker-compose\.cloudflare\.yml)$" }) {
+            $services = @("app", "ocr")
+          }
+
+          $services = @($services | Select-Object -Unique)
+          $serviceArg = $services -join " "
+          Write-Host "Changed files:"
+          $changed | ForEach-Object { Write-Host "  $_" }
+          Write-Host "Rebuilding services: $serviceArg"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "build_services=$serviceArg"
+
+      - name: Check Docker and database health
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          docker version
+          docker compose version
+
+          $mongoExists = docker ps -a --format "{{.Names}}" | Where-Object { $_ -eq "gma-mongodb" }
+          if ($mongoExists) {
+            for ($i = 1; $i -le 24; $i++) {
+              $health = docker inspect --format="{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}" gma-mongodb
+              Write-Host "gma-mongodb health: $health"
+              if ($health -eq "healthy" -or $health -eq "running") { exit 0 }
+              Start-Sleep -Seconds 5
+            }
+            docker logs --tail 80 gma-mongodb
+            Write-Error "gma-mongodb did not become healthy before deploy."
+          }
+
+      - name: Build selected services
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-Location "C:\Users\91834\Desktop\GMA"
+          $services = "${{ steps.services.outputs.build_services }}".Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)
+          & docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml build @services
+
+      - name: Recreate app
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-Location "C:\Users\91834\Desktop\GMA"
+          docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d --no-build app cloudflared
+
+      - name: Verify app health
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          for ($i = 1; $i -le 36; $i++) {
+            $health = docker inspect --format="{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}" gma-app
+            Write-Host "gma-app health: $health"
+            if ($health -eq "healthy" -or $health -eq "running") { break }
+            Start-Sleep -Seconds 5
+          }
+
+          $finalHealth = docker inspect --format="{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}" gma-app
+          if ($finalHealth -ne "healthy" -and $finalHealth -ne "running") {
+            docker logs --tail 120 gma-app
+            Write-Error "gma-app did not become healthy."
+          }
+
+          docker exec gma-app node -e "fetch('http://127.0.0.1:3000/api/health').then(async r=>{console.log(r.status); const body=await r.text(); console.log(body); if(!r.ok) process.exit(1)}).catch(e=>{console.error(e); process.exit(1)})"
+
+      - name: Prune old images
+        shell: powershell
+        run: |
           docker image prune -f
