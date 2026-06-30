@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import connectDB from '@/lib/mongodb';
-import { ShoppingList, Product } from '@/lib/models';
+import { ShoppingList, Product, Inventory } from '@/lib/models';
 import { buildForecasts, isLow } from '@/lib/forecast';
 import { addToInventory } from '@/lib/inventory';
 import { auth } from '@/auth';
@@ -23,6 +23,7 @@ export const dynamic = 'force-dynamic';
  */
 
 const MAX_NAME = 100;
+const clampQty = (qty: unknown) => Math.max(1, Math.min(99, Math.floor(Number(qty) || 1)));
 
 // Deterministic catalogue id for a hand-typed item, so re-adding the same name
 // resolves to one shared Product instead of duplicating it. Mirrors the scan
@@ -40,6 +41,14 @@ async function autoSync(userId: string) {
     const forecasts = await buildForecasts(userId);
     const low = forecasts.filter(isLow);
     const lowIds = low.map((p) => p.productId);
+    const activeRows = lowIds.length
+        ? await Inventory.find({ userId, productId: { $in: lowIds }, status: 'active' }).select('productId peakQty').lean()
+        : [];
+    const rememberedQty = new Map(
+        activeRows
+            .filter((row) => row.peakQty)
+            .map((row) => [row.productId, clampQty(row.peakQty)]),
+    );
 
     // Drop auto entries whose product is no longer low (cleans resolved / bought /
     // dismissed) so a later dip re-suggests it fresh.
@@ -58,11 +67,13 @@ async function autoSync(userId: string) {
                 name: p.name,
                 reason: p.status === 'out_of_stock' ? 'out_of_stock' : 'low_stock',
             };
+            const qty = rememberedQty.get(p.productId);
+            if (qty) set.restockQty = qty;
             return ShoppingList.updateOne(
                 { userId, productId: p.productId, source: 'auto' },
                 {
                     $set: set,
-                    $setOnInsert: { userId, productId: p.productId, source: 'auto', status: 'pending' },
+                    $setOnInsert: { userId, productId: p.productId, source: 'auto', status: 'pending', restockQty: qty ?? 1 },
                 },
                 { upsert: true },
             );
@@ -200,10 +211,10 @@ export async function PATCH(request: Request) {
         const body = await request.json();
         const id = (body.id || '').toString();
         const action = (body.action || '').toString();
-        // Optional rebuy count from the list's quantity stepper (clamped); 0 = not sent.
-        const reqQty = Math.max(0, Math.min(99, Math.floor(Number(body.qty) || 0)));
+        // Optional rebuy count from the list's quantity stepper (clamped); null = not sent.
+        const reqQty = body.qty === undefined ? null : clampQty(body.qty);
         if (!id) return NextResponse.json({ success: false, message: 'id is required' }, { status: 400 });
-        if (!['check', 'uncheck', 'dismiss'].includes(action)) {
+        if (!['check', 'uncheck', 'dismiss', 'resetQty'].includes(action)) {
             return NextResponse.json({ success: false, message: 'invalid action' }, { status: 400 });
         }
 
@@ -217,8 +228,11 @@ export async function PATCH(request: Request) {
             // (forecast) or manual (hand-typed, now a real catalogue product).
             // boughtAt guards against a double add if they uncheck and re-check.
             if (entry.productId && !entry.boughtAt) {
-                const addQty = Math.max(1, reqQty || 1);
-                await addToInventory(userId, entry.productId, addQty);
+                const addQty = reqQty ?? clampQty(entry.restockQty);
+                const inventoryItem = await addToInventory(userId, entry.productId, addQty);
+                inventoryItem.peakQty = addQty;
+                await inventoryItem.save();
+                entry.restockQty = addQty;
                 entry.boughtAt = new Date();
             }
             entry.status = 'done';
@@ -234,6 +248,15 @@ export async function PATCH(request: Request) {
                 return NextResponse.json({ success: false, message: 'Manual items cannot be dismissed' }, { status: 400 });
             }
             entry.status = 'dismissed';
+        } else if (action === 'resetQty') {
+            if (!entry.productId) {
+                return NextResponse.json({ success: false, message: 'Item has no product quantity to reset' }, { status: 400 });
+            }
+            entry.restockQty = 1;
+            await Inventory.updateMany(
+                { userId, productId: entry.productId, status: 'active' },
+                { $set: { peakQty: 1 } },
+            );
         }
         await entry.save();
 

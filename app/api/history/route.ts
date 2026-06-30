@@ -5,6 +5,8 @@ import { ConsumptionLog, Inventory, Product, ShoppingList } from '@/lib/models';
 import { auth } from '@/auth';
 import { serverError } from '@/lib/apiError';
 
+const clampRestockQty = (qty: unknown) => Math.max(1, Math.min(99, Math.floor(Number(qty) || 1)));
+
 export async function GET() {
     try {
         const session = await auth();
@@ -108,13 +110,18 @@ export async function POST(request: Request) {
                 });
                 if (stillStocked === 0) {
                     const prod = await Product.findOne({ barcode: row.productId }).select('name').lean() as { name?: string } | null;
+                    const restockQty = clampRestockQty(row.peakQty);
                     // Add it to the shopping list right away (autoSync keeps it while
-                    // out of stock). Rebuy quantity defaults to 1 — the user dials it
-                    // on the list if they want more.
+                    // out of stock), carrying the remembered stepper quantity with it.
                     await ShoppingList.updateOne(
                         { userId: session.user.id, productId: row.productId, source: 'auto' },
                         {
-                            $set: { name: prod?.name || `Product ${row.productId.slice(0, 8)}`, reason: 'out_of_stock', status: 'pending' },
+                            $set: {
+                                name: prod?.name || `Product ${row.productId.slice(0, 8)}`,
+                                reason: 'out_of_stock',
+                                status: 'pending',
+                                restockQty,
+                            },
                             $setOnInsert: { userId: session.user.id, productId: row.productId, source: 'auto' },
                         },
                         { upsert: true },

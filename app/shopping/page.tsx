@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingCart, Plus, Minus, Check, X, Trash2, Loader2, Package, ChevronDown, ChevronRight } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Check, X, Trash2, Loader2, Package, ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
 import BackButton from "@/components/BackButton";
 import UserMenu from "@/components/UserMenu";
 
@@ -16,6 +16,7 @@ interface ListItem {
     reason: "low_stock" | "out_of_stock" | "manual";
     source: "auto" | "manual";
     status: "pending" | "done" | "dismissed";
+    restockQty: number;
     boughtAt: string | null;
 }
 
@@ -35,7 +36,7 @@ export default function ShoppingPage() {
     const [showDone, setShowDone] = useState(false);
     const [showDismissed, setShowDismissed] = useState(false);
     // Per-item rebuy quantity the user dials before ticking "Got it"; defaults to
-    // 1. Their edits survive list refreshes.
+    // the remembered purchase quantity from the server. Their edits survive refreshes.
     const [qty, setQty] = useState<Record<string, number>>({});
     const [toast, setToast] = useState<string | null>(null);
 
@@ -45,8 +46,7 @@ export default function ShoppingPage() {
         return () => clearTimeout(t);
     }, [toast]);
 
-    // Rebuy count defaults to 1; the user dials up if they want more.
-    const getQty = (item: ListItem) => qty[item._id] ?? 1;
+    const getQty = (item: ListItem) => qty[item._id] ?? item.restockQty ?? 1;
     const bumpQty = (item: ListItem, delta: number) =>
         setQty((q) => ({ ...q, [item._id]: Math.max(1, Math.min(99, getQty(item) + delta)) }));
 
@@ -90,6 +90,17 @@ export default function ShoppingPage() {
                 body: JSON.stringify({ id, action }),
             });
         });
+
+    const resetQty = (item: ListItem) => {
+        setQty((q) => ({ ...q, [item._id]: 1 }));
+        return withBusy(item._id, async () => {
+            await fetch("/api/shopping-list", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: item._id, action: "resetQty" }),
+            });
+        });
+    };
 
     // Separate handler for "check" so we can show a toast when inventory is added.
     const handleCheck = (item: ListItem) => {
@@ -245,6 +256,14 @@ export default function ShoppingPage() {
                                                     className="w-7 h-7 rounded-full border border-line-strong flex items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors disabled:opacity-50"
                                                 >
                                                     <Plus className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button
+                                                    onClick={() => resetQty(item)}
+                                                    disabled={isBusy || getQty(item) === 1}
+                                                    title="Reset remembered quantity"
+                                                    className="w-7 h-7 rounded-full border border-line-strong flex items-center justify-center text-ink-soft hover:bg-paper-2 transition-colors disabled:opacity-40"
+                                                >
+                                                    <RotateCcw className="w-3.5 h-3.5" />
                                                 </button>
                                             </div>
                                         )}

@@ -5,6 +5,8 @@ import { addToInventory } from '@/lib/inventory';
 import { auth } from '@/auth';
 import { serverError } from '@/lib/apiError';
 
+const clampRestockQty = (qty: unknown) => Math.max(1, Math.min(99, Math.floor(Number(qty) || 1)));
+
 export async function GET() {
     try {
         const session = await auth();
@@ -206,7 +208,7 @@ export async function DELETE(request: Request) {
         if (stillStocked === 0) {
             await ShoppingList.updateOne(
                 { userId: session.user.id, productId: deletedItem.productId, source: 'auto', status: 'done' },
-                { $set: { status: 'pending', reason: 'out_of_stock' } },
+                { $set: { status: 'pending', reason: 'out_of_stock', restockQty: clampRestockQty(deletedItem.peakQty) } },
             );
         }
 

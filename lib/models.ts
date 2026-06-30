@@ -111,7 +111,7 @@ export interface IInventory extends Document {
     userId: string;
     productId: string; // barcode
     quantity: number;
-    peakQty?: number; // most packs ever held in this lot — the rebuy quantity to suggest once it runs out
+    peakQty?: number; // last explicit shopping-list buy qty to suggest once it runs out
     unit: string;
     purchaseDate: Date;
     expiryDate?: Date;
@@ -174,7 +174,7 @@ export interface IShoppingList extends Document {
     reason: 'low_stock' | 'out_of_stock' | 'manual';
     source: 'auto' | 'manual';
     status: 'pending' | 'done' | 'dismissed';
-    restockQty?: number; // suggested rebuy count = how many you last stocked (captured when it ran out)
+    restockQty?: number; // suggested rebuy count shown on the shopping-list stepper
     boughtAt?: Date;    // set once on first "got it" → guards against double inventory add
     createdAt: Date;
     updatedAt: Date;
