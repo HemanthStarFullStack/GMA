@@ -208,7 +208,7 @@ export async function DELETE(request: Request) {
         if (stillStocked === 0) {
             await ShoppingList.updateOne(
                 { userId: session.user.id, productId: deletedItem.productId, source: 'auto', status: 'done' },
-                { $set: { status: 'pending', reason: 'out_of_stock', restockQty: clampRestockQty(deletedItem.peakQty) } },
+                { $set: { status: 'pending', reason: 'out_of_stock', restockQty: clampRestockQty(deletedItem.peakQty), boughtAt: null } },
             );
         }
 

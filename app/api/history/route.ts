@@ -121,6 +121,7 @@ export async function POST(request: Request) {
                                 reason: 'out_of_stock',
                                 status: 'pending',
                                 restockQty,
+                                boughtAt: null,
                             },
                             $setOnInsert: { userId: session.user.id, productId: row.productId, source: 'auto' },
                         },

@@ -227,7 +227,7 @@ export async function PATCH(request: Request) {
             // user dialed (default 1). Works for any entry tied to a product — auto
             // (forecast) or manual (hand-typed, now a real catalogue product).
             // boughtAt guards against a double add if they uncheck and re-check.
-            if (entry.productId && !entry.boughtAt) {
+            if (entry.productId && (entry.status !== 'done' || !entry.boughtAt)) {
                 const addQty = reqQty ?? clampQty(entry.restockQty);
                 const inventoryItem = await addToInventory(userId, entry.productId, addQty);
                 inventoryItem.peakQty = addQty;
