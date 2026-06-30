@@ -69,11 +69,13 @@ async function autoSync(userId: string) {
             };
             const qty = rememberedQty.get(p.productId);
             if (qty) set.restockQty = qty;
+            const setOnInsert: Record<string, unknown> = { userId, productId: p.productId, source: 'auto', status: 'pending' };
+            if (!qty) setOnInsert.restockQty = 1;
             return ShoppingList.updateOne(
                 { userId, productId: p.productId, source: 'auto' },
                 {
                     $set: set,
-                    $setOnInsert: { userId, productId: p.productId, source: 'auto', status: 'pending', restockQty: qty ?? 1 },
+                    $setOnInsert: setOnInsert,
                 },
                 { upsert: true },
             );
