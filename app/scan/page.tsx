@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PhotoCapture from "@/components/PhotoCapture";
 import { Package, CheckCircle2, Loader2, Minus, Plus, Sparkles, ImagePlus, X, ScanLine } from "lucide-react";
@@ -61,13 +61,18 @@ function ScanPageInner() {
     // Arrived from the shopping list's "Add item" — same manual-entry form,
     // but it creates a shopping-list entry instead of adding to inventory.
     const forShopping = searchParams.get("to") === "shopping";
-    const [mode, setMode] = useState<Mode>("scan");
+    // Arriving for the shopping list: open the manual form as the FIRST render,
+    // not via an effect — starting in "scan" mode for even one tick mounts
+    // PhotoCapture and fires the camera before we could switch away.
+    const [mode, setMode] = useState<Mode>(forShopping ? "manual" : "scan");
     const [toast, setToast] = useState<string | null>(null);
     const [lookingUp, setLookingUp] = useState(false);
     const [reestimating, setReestimating] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
     const [readingBack, setReadingBack] = useState(false);
-    const [form, setForm] = useState<Form>(emptyForm());
+    const [form, setForm] = useState<Form>(() =>
+        forShopping ? { ...emptyForm(`MANUAL-${Date.now()}`), name: searchParams.get("name") || "" } : emptyForm(),
+    );
     // Fields the structurer flagged low-confidence — shown with a "check" hint.
     const [lowConf, setLowConf] = useState<Set<string>>(new Set());
     const fileRef = useRef<HTMLInputElement>(null);
@@ -76,17 +81,6 @@ function ScanPageInner() {
     // not the stale closure value from when the handler was created.
     const formRef = useRef(form);
     formRef.current = form;
-
-    // Jump straight to the manual form, pre-filled with the name typed on the
-    // shopping list — skip the camera step (you don't have the item yet).
-    useEffect(() => {
-        if (forShopping) {
-            setForm({ ...emptyForm(`MANUAL-${Date.now()}`), name: searchParams.get("name") || "" });
-            setLowConf(new Set());
-            setMode("manual");
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     const handlePhoto = async (image: Blob) => {
         setLookingUp(true);

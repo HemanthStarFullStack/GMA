@@ -31,7 +31,6 @@ export default function ShoppingPage() {
     const [items, setItems] = useState<ListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState<Set<string>>(new Set());
-    const [name, setName] = useState("");
     const [showDone, setShowDone] = useState(false);
     const [showDismissed, setShowDismissed] = useState(false);
     // Per-item rebuy quantity the user dials before ticking "Got it"; defaults to
@@ -130,13 +129,8 @@ export default function ShoppingPage() {
         });
 
     // "Add item" opens the same manual-entry form as product scan — collects
-    // brand/price/etc. and creates the shopping-list entry from there, instead
-    // of a bare-name POST here.
-    const addManual = () => {
-        const trimmed = name.trim();
-        if (!trimmed) return;
-        router.push(`/scan?to=shopping&name=${encodeURIComponent(trimmed)}`);
-    };
+    // brand/price/etc. and creates the shopping-list entry from there.
+    const addManual = () => router.push("/scan?to=shopping");
 
     const pending = items.filter((i) => i.status === "pending");
     const done = items.filter((i) => i.status === "done");
@@ -157,24 +151,14 @@ export default function ShoppingPage() {
 
             <main className="container mx-auto px-5 py-8 max-w-2xl">
                 {/* Add item */}
-                <div data-tour="shop-add" className="flex gap-2 mb-6">
-                    <input
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && addManual()}
-                        placeholder="Add an item…"
-                        maxLength={100}
-                        className="flex-1 px-4 py-2.5 rounded-xl border border-line-strong bg-card text-ink focus:ring-2 focus:ring-terracotta/40 focus:border-terracotta outline-none"
-                    />
-                    <button
-                        onClick={addManual}
-                        disabled={!name.trim()}
-                        className="btn-primary px-4 py-2.5 flex items-center gap-2 disabled:opacity-50"
-                    >
-                        <Plus className="w-5 h-5" />
-                        Add
-                    </button>
-                </div>
+                <button
+                    data-tour="shop-add"
+                    onClick={addManual}
+                    className="btn-primary w-full py-4 mb-6 flex items-center justify-center gap-2 text-lg font-semibold"
+                >
+                    <Plus className="w-6 h-6" />
+                    Add item
+                </button>
 
                 {loading ? (
                     <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-terracotta" /></div>
