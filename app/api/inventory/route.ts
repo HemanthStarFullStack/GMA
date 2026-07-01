@@ -198,17 +198,30 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ success: false, message: 'Item not found or unauthorized' }, { status: 404 });
         }
 
-        // If this was the last active lot, resurface any shopping list entry the user
-        // had already checked off ("done") — the product is now truly 0 stock.
+        // If this was the last active lot, the product is now truly 0 stock —
+        // upsert a fresh out-of-stock reminder (same pattern as the consume flow
+        // in history.ts), not a resurrect-on-status-'done' — "Bought" deletes its
+        // entry outright now, so there's never a done doc left to resurface.
         const stillStocked = await Inventory.countDocuments({
             userId: session.user.id,
             productId: deletedItem.productId,
             status: 'active',
         });
         if (stillStocked === 0) {
+            const prod = await Product.findOne({ barcode: deletedItem.productId }).select('name').lean() as { name?: string } | null;
             await ShoppingList.updateOne(
-                { userId: session.user.id, productId: deletedItem.productId, source: 'auto', status: 'done' },
-                { $set: { status: 'pending', reason: 'out_of_stock', restockQty: clampRestockQty(deletedItem.peakQty), boughtAt: null } },
+                { userId: session.user.id, productId: deletedItem.productId, source: 'auto' },
+                {
+                    $set: {
+                        name: prod?.name || `Product ${deletedItem.productId.slice(0, 8)}`,
+                        reason: 'out_of_stock',
+                        status: 'pending',
+                        restockQty: clampRestockQty(deletedItem.peakQty),
+                        boughtAt: null,
+                    },
+                    $setOnInsert: { userId: session.user.id, productId: deletedItem.productId, source: 'auto' },
+                },
+                { upsert: true },
             );
         }
 
