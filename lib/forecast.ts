@@ -174,6 +174,15 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
         if (product.status === 'in_stock' && avgDuration > 0) {
             const prod = productMap.get(product.productId);
             const isPerPerson = prod?.category === 'Personal Care';
+            const sizeFactorNow = isPerPerson ? 1 : currentSize;
+            // Rate consistency: once real consumption logs exist, the blended
+            // avgDuration IS the learned rate — use it for BOTH the backward
+            // depletion of `remaining` AND the forward projection, so the two
+            // halves can't disagree. Only before any logs do we lean on the
+            // scan-time perPersonDailyRate (which keeps size-over-time weighting).
+            // (Previously `remaining` used the stored rate while daysUntilEmpty
+            // divided by 1/avgDuration — divergent once history accumulated.)
+            const rate = h.timesConsumed > 0 ? null : (prod?.perPersonDailyRate ?? null);
             // Time-weighted: deplete each purchase lot by how the household size
             // actually varied over its life, then project the remainder forward.
             const now = new Date();
@@ -184,7 +193,7 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
                         purchaseDate: row.purchaseDate,
                         qty: row.qty,
                         now,
-                        perPersonDailyRate: prod?.perPersonDailyRate ?? null,
+                        perPersonDailyRate: rate,
                         averageDuration: avgDuration,
                         currentSize,
                         isPerPerson,
@@ -192,10 +201,13 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
                     }).remaining,
                 0,
             );
-            const consumptionRate = 1 / avgDuration; // units/day at current size
-            const daysUntilEmpty = remaining / consumptionRate;
+            // Forward rate derived the SAME way depletion derived its own — units
+            // per day at the current household size.
+            const r = rate && rate > 0 ? rate : 1 / (avgDuration * sizeFactorNow);
+            const forwardRate = r * sizeFactorNow;
+            const daysUntilEmpty = forwardRate > 0 ? remaining / forwardRate : 0;
             product.predictions = {
-                consumptionRate: Math.round(consumptionRate * 100) / 100,
+                consumptionRate: Math.round(forwardRate * 100) / 100,
                 daysUntilEmpty: Math.round(daysUntilEmpty * 10) / 10,
                 restockDate: new Date(now.getTime() + daysUntilEmpty * 86400000).toISOString(),
                 needsRestock: daysUntilEmpty < 7,

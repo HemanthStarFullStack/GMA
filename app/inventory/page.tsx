@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Plus, Loader2, BarChart3, ShoppingCart, Search } from "lucide-react";
 import BackButton from "@/components/BackButton";
 import ProductCard from "@/components/ProductCard";
@@ -49,6 +50,7 @@ const SORTS: { value: SortBy; label: string }[] = [
 ];
 
 export default function InventoryPage() {
+    const router = useRouter();
     const [items, setItems] = useState<InventoryItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [familySize, setFamilySize] = useState(1);
@@ -110,9 +112,12 @@ export default function InventoryPage() {
             }
         };
         try {
+            // Round (not floor) so this matches the −stepper path (server PATCH
+            // uses Math.round) — same physical consume shouldn't log a different
+            // duration depending on which control fired it.
             const actualDays = Math.max(
                 1,
-                Math.floor((Date.now() - new Date(item.purchaseDate).getTime()) / 86400000),
+                Math.round((Date.now() - new Date(item.purchaseDate).getTime()) / 86400000),
             );
             const expected = item.product.averageDuration || 14;
 
@@ -134,6 +139,9 @@ export default function InventoryPage() {
 
             const data = await res.json();
             if (!data.success) revert();
+            // Consuming the last pack adds the item to the shopping list, so the
+            // home hero + badge must refresh (server '/' is revalidated too).
+            else router.refresh();
         } catch (error) {
             console.error("Failed to log consumption:", error);
             revert();
@@ -157,6 +165,8 @@ export default function InventoryPage() {
             const res = await fetch(`/api/inventory?id=${removing._id}`, { method: "DELETE" });
             const data = await res.json();
             if (!data.success) setItems((prev) => { const next = [...prev]; next.splice(removingIdx, 0, removing); return next; });
+            // Deleting the last lot can add the item to the shopping list — refresh home.
+            else router.refresh();
         } catch (error) {
             console.error("Failed to delete item:", error);
             setItems((prev) => { const next = [...prev]; next.splice(removingIdx, 0, removing); return next; });
@@ -184,6 +194,8 @@ export default function InventoryPage() {
             }
             const data = await res.json();
             if (!data.success) setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: i.quantity - delta } : i));
+            // Crossing the low threshold (1↔2) changes the shopping list — refresh home.
+            else router.refresh();
         } catch (error) {
             console.error("Failed to adjust quantity:", error);
             setItems((prev) => prev.map((i) => i._id === id ? { ...i, quantity: i.quantity - delta } : i));
@@ -208,8 +220,17 @@ export default function InventoryPage() {
         return sorted;
     }, [items, query, sortBy]);
 
+    // Section chip narrows the list; applied on top of search + sort.
+    const visible = section === "all"
+        ? processed
+        : processed.filter((i) => sectionFor(i.product?.category) === section);
+    // Group by shelf ONLY in the default browse order. Once the user picks an
+    // explicit sort (name / qty), render one flat sorted grid — otherwise the
+    // shelf grouping masks the sort (it reorders only WITHIN each shelf, so the
+    // overall order never visibly changes, which reads as "sort does nothing").
+    const grouped = sortBy === "recent";
     const sectionsToRender = section === "all" ? SECTION_ORDER : [section];
-    const hasMatches = processed.length > 0;
+    const hasMatches = visible.length > 0;
 
     return (
         <div className="min-h-screen">
@@ -291,7 +312,7 @@ export default function InventoryPage() {
                                 <h3 className="font-display text-2xl font-semibold text-ink mb-2">No matches</h3>
                                 <p className="text-ink-soft">Try a different search.</p>
                             </div>
-                        ) : (
+                        ) : grouped ? (
                             <div id="tour-grid" className="space-y-10">
                                 {sectionsToRender.map((title) => {
                                     const group = processed.filter((item) => sectionFor(item.product?.category) === title);
@@ -311,6 +332,13 @@ export default function InventoryPage() {
                                         </section>
                                     );
                                 })}
+                            </div>
+                        ) : (
+                            /* Explicit sort active → one flat grid so the order is actually visible. */
+                            <div id="tour-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {visible.map((item) => (
+                                    <ProductCard key={item._id} item={item} onConsume={handleConsume} onDelete={handleDelete} onAdjust={handleAdjust} />
+                                ))}
                             </div>
                         )}
                     </>

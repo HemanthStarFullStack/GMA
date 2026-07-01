@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import { ConsumptionLog, Inventory, Product, ShoppingList } from '@/lib/models';
@@ -131,6 +132,9 @@ export async function POST(request: Request) {
             }
         }
 
+        // Consuming the last pack can add an out-of-stock item to the shopping
+        // list and shifts the home hero — refresh the server-rendered '/'.
+        revalidatePath('/');
         return NextResponse.json({
             success: true,
             message: 'Consumption logged',

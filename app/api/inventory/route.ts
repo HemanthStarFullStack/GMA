@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import connectDB from '@/lib/mongodb';
 import { Inventory, Product, ConsumptionLog, ShoppingList } from '@/lib/models';
 import { addToInventory } from '@/lib/inventory';
@@ -6,6 +7,19 @@ import { auth } from '@/auth';
 import { serverError } from '@/lib/apiError';
 
 const clampRestockQty = (qty: unknown) => Math.max(1, Math.min(99, Math.floor(Number(qty) || 1)));
+
+// After a stock change, drop the product's auto shopping-list reminder if it's
+// no longer low (total active qty > 1 — mirrors isLow = currentStock <= 1 in
+// lib/forecast.ts). The home badge counts pending entries via a fast query that
+// skips autoSync, so without this a scanned-back-in item would keep showing on
+// the badge until the user next opened /shopping. Manual entries are left alone.
+async function clearAutoListIfStocked(userId: string, productId: string) {
+    const rows = await Inventory.find({ userId, productId, status: 'active' }).select('quantity').lean();
+    const total = rows.reduce((s, r) => s + (r.quantity || 0), 0);
+    if (total > 1) {
+        await ShoppingList.deleteOne({ userId, productId, source: 'auto' });
+    }
+}
 
 export async function GET() {
     try {
@@ -97,6 +111,10 @@ export async function POST(request: Request) {
         // no productDetails still get the real pack size, not a bare 'units'.
         const item = await addToInventory(session.user.id, barcode, qty, body.unit || d?.unit);
 
+        // Scanning/adding stock can resolve a low item — clear its reminder and
+        // refresh the home hero/badge (both derive from this stock).
+        await clearAutoListIfStocked(session.user.id, barcode);
+        revalidatePath('/');
         return NextResponse.json({ success: true, message: 'Item added to inventory', data: item });
     } catch (error: any) {
         return serverError('inventory.POST', error, 'Failed to add item');
@@ -171,6 +189,10 @@ export async function PATCH(request: Request) {
         row.quantity += delta;
         await row.save();
 
+        // Topping up past the low line clears the reminder; a decrement that leaves
+        // ≤1 leaves it (still low). Either way the home hero/badge may shift.
+        await clearAutoListIfStocked(session.user.id, row.productId);
+        revalidatePath('/');
         return NextResponse.json({ success: true, message: 'Quantity updated', data: row });
     } catch (error: any) {
         return serverError('inventory.PATCH', error, 'Failed to update quantity');
@@ -225,6 +247,7 @@ export async function DELETE(request: Request) {
             );
         }
 
+        revalidatePath('/');
         return NextResponse.json({ success: true, message: 'Item deleted' });
     } catch (error: any) {
         return serverError('inventory.DELETE', error, 'Failed to delete item');
