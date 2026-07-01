@@ -224,13 +224,28 @@ export default function InventoryPage() {
     const visible = section === "all"
         ? processed
         : processed.filter((i) => sectionFor(i.product?.category) === section);
-    // Group by shelf ONLY in the default browse order. Once the user picks an
-    // explicit sort (name / qty), render one flat sorted grid — otherwise the
-    // shelf grouping masks the sort (it reorders only WITHIN each shelf, so the
-    // overall order never visibly changes, which reads as "sort does nothing").
-    const grouped = sortBy === "recent";
-    const sectionsToRender = section === "all" ? SECTION_ORDER : [section];
     const hasMatches = visible.length > 0;
+
+    // Always keep the shelf grouping (headers, vertical stack). To make a sort
+    // visible without flattening, ALSO reorder the shelves themselves by the sort
+    // key — otherwise a sort only reshuffles within a shelf and looks like it did
+    // nothing. "Recently added" keeps the fixed browse order.
+    const sectionsToRender = useMemo(() => {
+        if (section !== "all") return [section];
+        const present = SECTION_ORDER.filter((title) =>
+            processed.some((i) => sectionFor(i.product?.category) === title),
+        );
+        if (sortBy === "name") {
+            return present.slice().sort((a, b) => a.localeCompare(b));
+        }
+        if (sortBy === "qty") {
+            // Shelf with the most-depleted item first (matches items low→high).
+            const minQty = (title: string) =>
+                Math.min(...processed.filter((i) => sectionFor(i.product?.category) === title).map((i) => i.quantity));
+            return present.slice().sort((a, b) => minQty(a) - minQty(b));
+        }
+        return present; // "recent" → fixed shelf order
+    }, [section, sortBy, processed]);
 
     return (
         <div className="min-h-screen">
@@ -312,7 +327,7 @@ export default function InventoryPage() {
                                 <h3 className="font-display text-2xl font-semibold text-ink mb-2">No matches</h3>
                                 <p className="text-ink-soft">Try a different search.</p>
                             </div>
-                        ) : grouped ? (
+                        ) : (
                             <div id="tour-grid" className="space-y-10">
                                 {sectionsToRender.map((title) => {
                                     const group = processed.filter((item) => sectionFor(item.product?.category) === title);
@@ -332,13 +347,6 @@ export default function InventoryPage() {
                                         </section>
                                     );
                                 })}
-                            </div>
-                        ) : (
-                            /* Explicit sort active → one flat grid so the order is actually visible. */
-                            <div id="tour-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {visible.map((item) => (
-                                    <ProductCard key={item._id} item={item} onConsume={handleConsume} onDelete={handleDelete} onAdjust={handleAdjust} />
-                                ))}
                             </div>
                         )}
                     </>
