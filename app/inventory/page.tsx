@@ -236,7 +236,14 @@ export default function InventoryPage() {
             processed.some((i) => sectionFor(i.product?.category) === title),
         );
         if (sortBy === "name") {
-            return present.slice().sort((a, b) => a.localeCompare(b));
+            // Order shelves by their alphabetically-first item (NOT the shelf
+            // title) so items read top-to-bottom in true A–Z order.
+            const firstName = (title: string) =>
+                processed
+                    .filter((i) => sectionFor(i.product?.category) === title)
+                    .map((i) => (i.product?.name ?? "").toLowerCase())
+                    .sort()[0] ?? "";
+            return present.slice().sort((a, b) => firstName(a).localeCompare(firstName(b)));
         }
         if (sortBy === "qty") {
             // Shelf with the most-depleted item first (matches items low→high).
