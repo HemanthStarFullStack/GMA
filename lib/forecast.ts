@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
-import { ConsumptionLog, Inventory, Product, User } from '@/lib/models';
+import { ConsumptionLog, Inventory, User } from '@/lib/models';
+import { resolveProducts } from '@/lib/userProduct';
 import { depletion, type SizeSegment } from '@/lib/depletion';
 
 /**
@@ -74,12 +75,13 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
     const currentSize = Math.max(1, user?.familySize ?? 1);
     const sizeLog = (user?.familySizeLog as SizeSegment[] | undefined) ?? [];
 
-    // Join product details once, by barcode (productId === barcode).
+    // Resolve each product to THIS user's version (UserProduct → shared fallback),
+    // so their forecast uses their own name, category, shelf-life and rate — never
+    // another account's. Same overlay the display routes use.
     const barcodes = [
         ...new Set([...currentInventory.map((i) => i.productId), ...consumptionLogs.map((l) => l.productId)]),
     ];
-    const products = await Product.find({ barcode: { $in: barcodes } }).lean();
-    const productMap = new Map(products.map((p) => [p.barcode, p]));
+    const productMap = await resolveProducts(userId, barcodes);
 
     const detailsFor = (barcode: string) => {
         const p = productMap.get(barcode);

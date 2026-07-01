@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
-import { ConsumptionLog, Inventory, Product, ShoppingList } from '@/lib/models';
+import { ConsumptionLog, Inventory, ShoppingList } from '@/lib/models';
+import { resolveProducts, resolveProduct } from '@/lib/userProduct';
 import { auth } from '@/auth';
 import { serverError } from '@/lib/apiError';
 
@@ -23,11 +24,8 @@ export async function GET() {
             .limit(50)
             .lean();
 
-        const barcodes = [...new Set(logs.map((l) => l.productId))];
-        const products = barcodes.length
-            ? await Product.find({ barcode: { $in: barcodes } }).lean()
-            : [];
-        const pmap = new Map(products.map((p) => [p.barcode, p]));
+        // Show the user's own version of each product (UserProduct → shared fallback).
+        const pmap = await resolveProducts(session.user.id, logs.map((l) => l.productId));
 
         const enrichedLogs = logs.map((log) => {
             const product = pmap.get(log.productId);
@@ -110,7 +108,7 @@ export async function POST(request: Request) {
                     status: 'active',
                 });
                 if (stillStocked === 0) {
-                    const prod = await Product.findOne({ barcode: row.productId }).select('name').lean() as { name?: string } | null;
+                    const eff = await resolveProduct(session.user.id, row.productId);
                     const restockQty = clampRestockQty(row.peakQty);
                     // Add it to the shopping list right away (autoSync keeps it while
                     // out of stock), carrying the remembered stepper quantity with it.
@@ -118,7 +116,7 @@ export async function POST(request: Request) {
                         { userId: session.user.id, productId: row.productId, source: 'auto' },
                         {
                             $set: {
-                                name: prod?.name || `Product ${row.productId.slice(0, 8)}`,
+                                name: eff?.name || `Product ${row.productId.slice(0, 8)}`,
                                 reason: 'out_of_stock',
                                 status: 'pending',
                                 restockQty,

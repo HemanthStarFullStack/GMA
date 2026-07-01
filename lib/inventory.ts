@@ -1,4 +1,5 @@
 import { Inventory, Product } from '@/lib/models';
+import { ensureUserProduct } from '@/lib/userProduct';
 
 /**
  * Add a product to a user's pantry: increment the existing active row for this
@@ -24,6 +25,12 @@ export async function addToInventory(
     // toward now, weighted by how many units are new vs. already there.
     // Ceiling: not race-safe against two concurrent adds of the same barcode
     // (rare: one user tapping). Switch to a transaction if that ever matters.
+
+    // Any product entering a user's stock becomes theirs — seed a UserProduct
+    // (from the shared catalogue) if they don't have one yet, so it stops
+    // tracking the shared record. No-op when one already exists.
+    await ensureUserProduct(userId, barcode);
+
     const existing = await Inventory.findOne({ userId, productId: barcode, status: 'active' });
     if (existing) {
         const oldQty = existing.quantity;

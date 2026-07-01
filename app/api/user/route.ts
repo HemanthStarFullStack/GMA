@@ -1,27 +1,27 @@
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
-import { User, Inventory, Product } from '@/lib/models';
+import { User, Inventory, UserProduct } from '@/lib/models';
 import { auth } from '@/auth';
 import { serverError } from '@/lib/apiError';
 
 /**
- * Re-estimate shelf-life for every active (non-demo) product the user holds,
- * using their NEW household size. Durations live in the shared catalogue, so we
- * only refresh the products this user actually has in stock. Runs in the
- * background (fire-and-forget) so the settings save returns instantly.
+ * Re-estimate shelf-life for every active product the user holds, using their
+ * NEW household size. Shelf-life is now PER-USER (lives on UserProduct), so this
+ * only touches this account's records — another household's size never bleeds in.
+ * Runs in the background (fire-and-forget) so the settings save returns instantly.
  */
 // Pure-math re-estimation — no AI calls. Uses the stored perPersonDailyRate
 // (set at scan time) or falls back to linear scaling from the current duration.
 async function reestimateForHousehold(userId: string, newN: number, oldN: number) {
-    const inv = await Inventory.find({ userId, status: 'active', isDemo: { $ne: true } }).select('productId').lean();
+    const inv = await Inventory.find({ userId, status: 'active' }).select('productId').lean();
     const barcodes = [...new Set(inv.map((i) => i.productId))];
     // Personal Care items are per-person — duration never changes with household size.
-    const products = await Product.find({
-        barcode: { $in: barcodes },
-        isDemo: { $ne: true },
+    const products = await UserProduct.find({
+        userId,
+        productId: { $in: barcodes },
         category: { $ne: 'Personal Care' },
-    }).select('barcode averageDuration perPersonDailyRate').lean();
+    }).select('productId averageDuration perPersonDailyRate').lean();
 
     await Promise.all(products.map((p) => {
         // Always estimate from a fixed per-person rate, never from the previous
@@ -36,7 +36,7 @@ async function reestimateForHousehold(userId: string, newN: number, oldN: number
             set.perPersonDailyRate = rate;
         }
         set.averageDuration = Math.max(1, Math.round(1 / (rate * newN)));
-        return Product.updateOne({ barcode: p.barcode }, { $set: set });
+        return UserProduct.updateOne({ userId, productId: p.productId }, { $set: set });
     }));
 
     console.log(`Re-estimated ${products.length} products for household ${oldN}→${newN} (math-only, no AI)`);
@@ -147,12 +147,13 @@ export async function PUT(request: Request) {
             update.prevFamilySize = oldFamily;
             update.familySizeChangedAt = now;
 
-            const inv = await Inventory.find({ userId: session.user.id, status: 'active', isDemo: { $ne: true } }).select('productId').lean();
+            const inv = await Inventory.find({ userId: session.user.id, status: 'active' }).select('productId').lean();
             const barcodes = [...new Set(inv.map((i) => i.productId))];
-            // Count excludes Personal Care (not re-estimated — shelf-life is per-person)
-            const count = await Product.countDocuments({
-                barcode: { $in: barcodes },
-                isDemo: { $ne: true },
+            // Count excludes Personal Care (not re-estimated — shelf-life is per-person).
+            // Per-user now: counts THIS account's UserProduct records.
+            const count = await UserProduct.countDocuments({
+                userId: session.user.id,
+                productId: { $in: barcodes },
                 category: { $ne: 'Personal Care' },
             });
             reestimating = count;

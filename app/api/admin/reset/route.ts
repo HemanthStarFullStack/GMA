@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
-import { Product, Inventory, ConsumptionLog, ShoppingList } from '@/lib/models';
+import { Product, UserProduct, Inventory, ConsumptionLog, ShoppingList } from '@/lib/models';
 import { requireAdmin } from '@/lib/adminGuard';
 import { serverError } from '@/lib/apiError';
 
@@ -42,10 +42,11 @@ export async function POST(request: Request) {
 
     try {
         await connectDB();
-        const [inv, logs, shop, prods] = await Promise.all([
+        const [inv, logs, shop, ups, prods] = await Promise.all([
             Inventory.deleteMany({ userId }),
             ConsumptionLog.deleteMany({ userId }),
             ShoppingList.deleteMany({ userId }),
+            UserProduct.deleteMany({ userId }),
             Product.deleteMany({}),
         ]);
 
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
                 inventory: inv.deletedCount ?? 0,
                 consumptionLogs: logs.deletedCount ?? 0,
                 shoppingList: shop.deletedCount ?? 0,
+                userProducts: ups.deletedCount ?? 0,
                 products: prods.deletedCount ?? 0,
             },
         });

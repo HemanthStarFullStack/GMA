@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import connectDB from '@/lib/mongodb';
 import { Inventory, Product, ConsumptionLog, ShoppingList } from '@/lib/models';
 import { addToInventory } from '@/lib/inventory';
+import { resolveProducts, resolveProduct, upsertUserProduct } from '@/lib/userProduct';
 import { auth } from '@/auth';
 import { serverError } from '@/lib/apiError';
 
@@ -32,10 +33,12 @@ export async function GET() {
 
         const inventoryItems = await Inventory.find({ userId: session.user.id }).sort({ purchaseDate: -1 }).lean();
 
-        // Join product details by barcode (productId === barcode everywhere).
-        const barcodes = [...new Set(inventoryItems.map((i) => i.productId))];
-        const products = await Product.find({ barcode: { $in: barcodes } }).lean();
-        const productMap = new Map(products.map((p) => [p.barcode, p]));
+        // Show the USER's own version of each product (UserProduct → shared
+        // Product fallback), so another account's scan never changes what they see.
+        const productMap = await resolveProducts(
+            session.user.id,
+            inventoryItems.map((i) => i.productId),
+        );
 
         const populatedItems = inventoryItems.map((item) => {
             const product = productMap.get(item.productId);
@@ -110,6 +113,23 @@ export async function POST(request: Request) {
         // product's stored defaultUnit (via addToInventory) so re-adds that send
         // no productDetails still get the real pack size, not a bare 'units'.
         const item = await addToInventory(session.user.id, barcode, qty, body.unit || d?.unit);
+
+        // The user's OWN version of this product — what they see + forecast with.
+        // Overwrites their copy on a re-scan+edit (addToInventory only seeds one if
+        // missing). The shared Product above stays a suggestion pool only.
+        if (d) {
+            await upsertUserProduct(session.user.id, barcode, {
+                ...(d.name ? { name: d.name } : {}),
+                ...(d.brand !== undefined ? { brand: d.brand || '' } : {}),
+                ...(d.flavor !== undefined ? { flavor: d.flavor || '' } : {}),
+                ...(d.price !== undefined ? { price: (d.price ?? '').toString() } : {}),
+                ...(d.category ? { category: d.category } : {}),
+                ...(d.imageUrl !== undefined ? { imageUrl: d.imageUrl || null } : {}),
+                ...(d.unit ? { defaultUnit: String(d.unit).trim().slice(0, 24) } : {}),
+                ...(d.averageDuration ? { averageDuration: Number(d.averageDuration) || 14 } : {}),
+                ...(d.perPersonDailyRate ? { perPersonDailyRate: Number(d.perPersonDailyRate) } : {}),
+            });
+        }
 
         // Scanning/adding stock can resolve a low item — clear its reminder and
         // refresh the home hero/badge (both derive from this stock).
@@ -230,12 +250,12 @@ export async function DELETE(request: Request) {
             status: 'active',
         });
         if (stillStocked === 0) {
-            const prod = await Product.findOne({ barcode: deletedItem.productId }).select('name').lean() as { name?: string } | null;
+            const eff = await resolveProduct(session.user.id, deletedItem.productId);
             await ShoppingList.updateOne(
                 { userId: session.user.id, productId: deletedItem.productId, source: 'auto' },
                 {
                     $set: {
-                        name: prod?.name || `Product ${deletedItem.productId.slice(0, 8)}`,
+                        name: eff?.name || `Product ${deletedItem.productId.slice(0, 8)}`,
                         reason: 'out_of_stock',
                         status: 'pending',
                         restockQty: clampRestockQty(deletedItem.peakQty),

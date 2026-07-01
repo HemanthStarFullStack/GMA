@@ -30,6 +30,9 @@ type Form = {
     imageUrl: string | null;
     source: string;
     addedBy: "barcode" | "manual";
+    // Set when the confirm form was pre-filled from the catalogue: pins the save
+    // to this product id so editing the name doesn't fork it into a new product.
+    catalogId?: string;
 };
 
 const emptyForm = (barcode = ""): Form => ({
@@ -130,21 +133,54 @@ function ScanPageInner() {
                 setMode("manual");
                 return;
             }
-            setForm({
-                ...emptyForm(),
-                name: d.name,
-                brand: d.brand || "",
-                flavor: d.flavor || "",
-                unit: d.quantity || "",
-                price: d.price || "",
-                category: d.category && CATEGORIES.includes(d.category) ? d.category : "Other",
-                source: "ocr",
-                imageUrl: localPreview,
-            });
-            finalizeImage();
-            setLowConf(lowConfFields(d.confidence));
-            setMode("confirm");
-            void autoEstimate(d);
+            // Pre-fill from the catalogue if we've seen this product before: YOUR
+            // saved version first, else the shared suggestion. Text fields follow
+            // the catalogue; the PHOTO stays the one you just took (never replaced
+            // by a cached image). A hit pins catalogId and skips auto-estimate
+            // (your saved shelf-life wins). A miss falls back to raw OCR + estimate.
+            const ocrId = ocrIdOf(d.brand || "", d.name, d.quantity || "");
+            let hit: any = null;
+            try {
+                const pr = await fetch(`/api/products?id=${encodeURIComponent(ocrId)}`);
+                const pj = await pr.json();
+                if (pj.success && pj.data) hit = pj.data;
+            } catch { /* no catalogue hit — fall through to OCR prefill */ }
+
+            if (hit) {
+                setForm({
+                    ...emptyForm(),
+                    catalogId: ocrId,
+                    name: hit.name || d.name,
+                    brand: hit.brand || d.brand || "",
+                    flavor: hit.flavor || d.flavor || "",
+                    unit: hit.defaultUnit && hit.defaultUnit !== "units" ? hit.defaultUnit : (d.quantity || ""),
+                    price: hit.price || d.price || "",
+                    category: hit.category && CATEGORIES.includes(hit.category) ? hit.category : (d.category && CATEGORIES.includes(d.category) ? d.category : "Other"),
+                    averageDuration: hit.averageDuration || 14,
+                    ...(hit.perPersonDailyRate ? { perPersonDailyRate: hit.perPersonDailyRate } : {}),
+                    source: "cache",
+                    imageUrl: localPreview, // your own just-captured photo, not the cached one
+                });
+                finalizeImage();
+                setLowConf(new Set());
+                setMode("confirm");
+            } else {
+                setForm({
+                    ...emptyForm(),
+                    name: d.name,
+                    brand: d.brand || "",
+                    flavor: d.flavor || "",
+                    unit: d.quantity || "",
+                    price: d.price || "",
+                    category: d.category && CATEGORIES.includes(d.category) ? d.category : "Other",
+                    source: "ocr",
+                    imageUrl: localPreview,
+                });
+                finalizeImage();
+                setLowConf(lowConfFields(d.confidence));
+                setMode("confirm");
+                void autoEstimate(d);
+            }
         } catch {
             setToast("OCR unavailable — add the product manually.");
             setForm({ ...emptyForm(), source: "ocr", imageUrl: localPreview });
@@ -166,6 +202,14 @@ function ScanPageInner() {
     // item resolves to one shared catalogue entry instead of a duplicate.
     const slugify = (s: string) =>
         s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+
+    // The OCR product id — MUST match between the prefill lookup and saveProduct,
+    // so a cache hit and the eventual save resolve to the same record. "units" is
+    // the default fallback, not a real size, so it's omitted from the slug.
+    const ocrIdOf = (brand: string, name: string, unit: string) => {
+        const unitPart = unit && unit.toLowerCase() !== "units" ? unit : "";
+        return `OCR-${slugify([brand, name, unitPart].filter(Boolean).join(" "))}`;
+    };
 
     // Background estimate right after a scan — patches only duration/category so
     // it never clobbers a field the user started editing. Reuses `reestimating`
@@ -327,14 +371,15 @@ function ScanPageInner() {
             return;
         }
         const returnMode: Mode = mode === "manual" ? "manual" : "confirm";
-        // "units" is the default fallback, not a real size — omit it from the
-        // slug so the same product scanned twice (once with size, once without)
-        // resolves to the same catalogue entry rather than creating a duplicate.
-        const unitPart = form.unit && form.unit.toLowerCase() !== "units" ? form.unit : "";
+        // A cache hit pinned catalogId so editing the name updates that same record
+        // instead of forking a new one. Otherwise an OCR/cache scan derives the id
+        // from its details; a hand-typed entry uses its manual/barcode id.
+        const isCatalogItem = !!form.catalogId || form.source === "ocr" || form.source === "cache";
         const productId =
-            form.source === "ocr"
-                ? `OCR-${slugify([form.brand, form.name, unitPart].filter(Boolean).join(" "))}`
-                : form.barcode || `MANUAL-${Date.now()}`;
+            form.catalogId
+                ?? (isCatalogItem
+                    ? ocrIdOf(form.brand, form.name, form.unit)
+                    : form.barcode || `MANUAL-${Date.now()}`);
         setMode("saving");
         const productDetails = {
             name: form.name.trim(),
@@ -363,7 +408,7 @@ function ScanPageInner() {
                     body: JSON.stringify({
                         name: form.name.trim(),
                         productDetails,
-                        ...(form.source === "ocr" ? { productId } : {}),
+                        ...(isCatalogItem ? { productId } : {}),
                     }),
                 })
                 : await fetch("/api/inventory", {

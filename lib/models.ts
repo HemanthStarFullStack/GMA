@@ -105,6 +105,42 @@ const ProductSchema = new Schema<IProduct>({
     isDemo: { type: Boolean, default: false },
 });
 
+// UserProduct Schema — a USER's own version of a product's identity. What each
+// account sees (name, category, photo…) and forecasts with (duration, rate) is
+// theirs alone; the shared Product above is demoted to a suggestion pool that
+// only pre-fills the scan form. Reads overlay: UserProduct → Product fallback.
+export interface IUserProduct extends Document {
+    userId: string;
+    productId: string; // barcode / OCR-slug / MANUAL-slug — same key space as Product.barcode
+    name: string;
+    brand: string;
+    flavor?: string;
+    price?: string;
+    category: string;
+    imageUrl?: string | null;
+    defaultUnit: string;
+    averageDuration: number; // days one unit lasts THIS household
+    perPersonDailyRate?: number; // units/day for 1 person — math-only re-estimation
+}
+
+const UserProductSchema = new Schema<IUserProduct>(
+    {
+        userId: { type: String, required: true, index: true },
+        productId: { type: String, required: true },
+        name: { type: String, required: true },
+        brand: { type: String, default: '' },
+        flavor: { type: String, default: '' },
+        price: { type: String, default: '' },
+        category: { type: String, default: 'Other' },
+        imageUrl: { type: String, default: null },
+        defaultUnit: { type: String, default: 'units' },
+        averageDuration: { type: Number, default: 14 },
+        perPersonDailyRate: { type: Number },
+    },
+    { timestamps: true },
+);
+UserProductSchema.index({ userId: 1, productId: 1 }, { unique: true });
+
 // Inventory Schema — productId stores the BARCODE (string), consistently joined
 // against Product.barcode everywhere in the app.
 export interface IInventory extends Document {
@@ -205,6 +241,7 @@ ShoppingListSchema.index(
 // Export models
 export const User = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
 export const Product = mongoose.models.Product || mongoose.model<IProduct>('Product', ProductSchema);
+export const UserProduct = mongoose.models.UserProduct || mongoose.model<IUserProduct>('UserProduct', UserProductSchema);
 export const Inventory = mongoose.models.Inventory || mongoose.model<IInventory>('Inventory', InventorySchema);
 export const ConsumptionLog = mongoose.models.ConsumptionLog || mongoose.model<IConsumptionLog>('ConsumptionLog', ConsumptionLogSchema);
 export const ShoppingList = mongoose.models.ShoppingList || mongoose.model<IShoppingList>('ShoppingList', ShoppingListSchema);

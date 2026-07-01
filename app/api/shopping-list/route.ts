@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongodb';
 import { ShoppingList, Product, Inventory } from '@/lib/models';
 import { buildForecasts, isLow } from '@/lib/forecast';
 import { addToInventory } from '@/lib/inventory';
+import { resolveProducts, upsertUserProduct } from '@/lib/userProduct';
 import { auth } from '@/auth';
 import { serverError } from '@/lib/apiError';
 
@@ -106,12 +107,9 @@ export async function GET(request: Request) {
         // the user can restore items they accidentally or prematurely dismissed.
         const entries = await ShoppingList.find({ userId, status: { $in: ['pending', 'done', 'dismissed'] } }).lean();
 
-        // Enrich auto/catalogue items with brand, image and pack size.
-        const barcodes = [...new Set(entries.filter((e) => e.productId).map((e) => e.productId as string))];
-        const products = barcodes.length
-            ? await Product.find({ barcode: { $in: barcodes } }).select('barcode brand imageUrl defaultUnit').lean()
-            : [];
-        const pmap = new Map(products.map((p) => [p.barcode, p]));
+        // Enrich catalogue items with the USER's own name/brand/image/pack size
+        // (UserProduct → shared fallback), so the list matches what they named it.
+        const pmap = await resolveProducts(userId, entries.filter((e) => e.productId).map((e) => e.productId as string));
 
         const items = entries
             .map((e) => {
@@ -119,7 +117,7 @@ export async function GET(request: Request) {
                 return {
                     _id: String(e._id),
                     productId: e.productId ?? null,
-                    name: e.name,
+                    name: p?.name || e.name,
                     brand: p?.brand || '',
                     imageUrl: p?.imageUrl || null,
                     unit: p?.defaultUnit || null,
@@ -206,6 +204,19 @@ export async function POST(request: Request) {
             { $set: set, $setOnInsert: setOnInsert },
             { upsert: true },
         );
+
+        // The user's OWN version of this hand-added product (their display truth).
+        await upsertUserProduct(userId, productId, {
+            name,
+            ...(d.brand !== undefined ? { brand: d.brand || '' } : {}),
+            ...(d.flavor !== undefined ? { flavor: d.flavor || '' } : {}),
+            ...(d.price !== undefined ? { price: (d.price ?? '').toString() } : {}),
+            ...(d.category ? { category: d.category } : {}),
+            ...(d.imageUrl !== undefined ? { imageUrl: d.imageUrl || null } : {}),
+            ...(d.unit ? { defaultUnit: String(d.unit).trim().slice(0, 24) } : {}),
+            ...(d.averageDuration ? { averageDuration: Number(d.averageDuration) || 14 } : {}),
+            ...(d.perPersonDailyRate ? { perPersonDailyRate: Number(d.perPersonDailyRate) } : {}),
+        });
 
         // Upsert, not create — re-adding the same name must reuse the existing
         // entry instead of duplicating it. Resurrects a done/dismissed entry to

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
-import { Product, Inventory, ConsumptionLog, ShoppingList, User } from '@/lib/models';
+import { Product, UserProduct, Inventory, ConsumptionLog, ShoppingList, User } from '@/lib/models';
 import { auth } from '@/auth';
 import { serverError } from '@/lib/apiError';
 
@@ -154,11 +154,12 @@ export async function DELETE() {
         const inv = await Inventory.deleteMany({ userId: uid, $or: [{ isDemo: true }, { productId: demoBarcode }] });
         const logs = await ConsumptionLog.deleteMany({ userId: uid, $or: [{ isDemo: true }, { productId: demoBarcode }] });
         const shop = await ShoppingList.deleteMany({ userId: uid, productId: demoBarcode });
+        const ups = await UserProduct.deleteMany({ userId: uid, productId: demoBarcode });
         const prods = await Product.deleteMany({ barcode: demoBarcode });
 
         return NextResponse.json({
             success: true,
-            removed: { inventory: inv.deletedCount, logs: logs.deletedCount, shopping: shop.deletedCount, products: prods.deletedCount },
+            removed: { inventory: inv.deletedCount, logs: logs.deletedCount, shopping: shop.deletedCount, userProducts: ups.deletedCount, products: prods.deletedCount },
         });
     } catch (error: any) {
         return serverError('demo', error);
