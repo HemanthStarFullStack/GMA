@@ -1,10 +1,9 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://admin:sinti_password_2024@localhost:27017/sinti_v2?authSource=admin';
-
-if (!MONGODB_URI) {
+if (!process.env.MONGODB_URI) {
     throw new Error('Please define the MONGODB_URI environment variable');
 }
+const MONGODB_URI: string = process.env.MONGODB_URI;
 
 /**
  * Global is used here to maintain a cached connection across hot reloads

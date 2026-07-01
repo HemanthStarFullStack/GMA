@@ -156,7 +156,7 @@ export default function GmaTour() {
                     has('[data-tour="shop-list"] .pantry-card')
                         ? { element: '[data-tour="shop-list"] .pantry-card', popover: { title: "Items to buy", description: "Atta & Tea ran out — GMA auto-added them. Tick the circle once bought and it goes straight back to your inventory." } }
                         : { popover: { title: "Shopping list", description: "Items that run low land here automatically. Tick them off once bought and they return to inventory." } },
-                    ...(has('[data-tour="shop-add"]') ? [{ element: '[data-tour="shop-add"]', popover: { title: "Add anything manually", description: "Need something GMA doesn't track yet? Type it here and check it off at the store." } }] : []),
+                    ...(has('[data-tour="shop-add"]') ? [{ element: '[data-tour="shop-add"]', popover: { title: "Add anything manually", description: "Need something GMA doesn't track yet? Tap here to add it and check it off at the store." } }] : []),
                 ],
                 analytics: [
                     ...(visible('[data-tour="analytics-list"] button') ? [{ element: '[data-tour="analytics-list"] button', popover: { title: "A tracked product", description: "Every product you've used shows here. Tap one to open its forecast." } }] : []),

@@ -141,7 +141,9 @@ export async function DELETE() {
 
         await connectDB();
         const uid = session.user.id;
-        const demoBarcode = new RegExp(`^DEMO-${uid}-`);
+        // uid is a trusted session claim, not attacker input — escaped anyway so
+        // this can never misbehave if that ever changes.
+        const demoBarcode = new RegExp(`^DEMO-${uid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-`);
 
         // Match by isDemo flag OR the demo barcode pattern. The barcode catch is
         // essential: shopping-list "got it" on a demo item runs addToInventory,

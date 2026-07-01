@@ -70,7 +70,6 @@ components/
   Tour.tsx              GmaTour — multi-page guided tour (driver.js)
   PhotoCapture.tsx      Camera capture UI + "Manual" entry button (scan page)
   ProductCard.tsx       Inventory item card: image, qty stepper, Mark consumed / Delete
-  ProductSurvey.tsx     "How long did it last?" consume survey modal
   HeroCard.tsx          Home hero: rotating low-stock item / empty / guest teaser
   UserMenu.tsx          Avatar dropdown → sign out
 lib/
@@ -78,7 +77,7 @@ lib/
                         Product, Inventory, ConsumptionLog, ShoppingList
   mongodb.ts            Mongoose connection (cached)
   mongodb-client.ts     MongoClient promise for the NextAuth adapter
-  forecast.ts           buildForecasts / lowStockItems / lowStockCount / isLow
+  forecast.ts           buildForecasts / isLow
   depletion.ts          Time-weighted stock depletion math (personDays, depletion)
   inventory.ts          addToInventory (increment-or-create, unit resolution)
   gemini.ts             predictProductMeta (AI shelf-life + category), CATEGORIES, normalizeCategory
@@ -200,7 +199,7 @@ Multipart `file`. Whitelist `image/jpeg|png|webp|gif`, max 5 MB. Writes `public/
 
 ### Admin (`/api/admin/*`) — guarded by `requireAdmin`
 `requireAdmin`: requires `x-admin-secret` header == `ADMIN_SECRET` env. **If `ADMIN_SECRET` is unset, returns 404** (endpoints disabled — a prod deploy that forgets the secret can't expose a DB wipe).
-- `POST /api/admin/reset?confirm=RESET` — wipes Inventory/ConsumptionLog/Product/ShoppingList (keeps users). Double-gated (secret + confirm token).
+- `POST /api/admin/reset?confirm=RESET&userId=<id>` — wipes that user's Inventory/ConsumptionLog/ShoppingList, plus the shared Product catalogue (global, keeps users). Double-gated (secret + confirm token) and requires an explicit userId so it can't wipe every account at once.
 - `POST /api/admin/refresh-durations` — re-predicts `averageDuration` for products still at the default 14.
 - `POST /api/admin/backfill-rates` — backfills `perPersonDailyRate` (+ resets averageDuration to 1-person baseline) for products lacking it.
 - `GET /api/admin/debug-gemini` — diagnostic (not reviewed in detail).
@@ -225,7 +224,7 @@ Multipart `file`. Whitelist `image/jpeg|png|webp|gif`, max 5 MB. Writes `public/
 
 Predictions object: `{consumptionRate (round 2dp), daysUntilEmpty (round 1dp), restockDate (ISO), needsRestock (daysUntilEmpty < 7)}`.
 
-`isLow(p)` = `status === 'out_of_stock' || predictions?.needsRestock`. `lowStockItems` / `lowStockCount` filter on it.
+`isLow(p)` = `currentStock <= 1` — a plain visible rule, deliberately not coupled to the run-out forecast (see the doc comment on `isLow` in forecast.ts).
 
 ---
 

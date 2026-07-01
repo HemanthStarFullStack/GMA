@@ -22,6 +22,10 @@ export default {
         Google({
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            // Safe ONLY because Google is the sole OAuth provider and Google verifies
+            // emails — linking by email can't be spoofed by a rival provider today.
+            // Adding a second OAuth provider that doesn't verify email ownership turns
+            // this into an account-takeover vector; revisit before adding one.
             allowDangerousEmailAccountLinking: true,
         }),
     ],

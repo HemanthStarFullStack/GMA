@@ -298,14 +298,3 @@ export async function predictProductMeta(
     console.warn(`All predictors failed for "${name}" — using heuristic fallback ${JSON.stringify(fallback)}`);
     return fallback;
 }
-
-/** Back-compat: duration only (used by the refresh-durations admin endpoint). */
-export async function predictConsumptionDays(
-    name: string,
-    brand: string,
-    category: string,
-    unit: string,
-): Promise<number> {
-    const meta = await predictProductMeta(name, brand, category, unit);
-    return meta.averageDuration;
-}

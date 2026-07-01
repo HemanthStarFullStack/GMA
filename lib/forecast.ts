@@ -216,14 +216,3 @@ export async function buildForecasts(userId: string): Promise<ProductForecast[]>
 export function isLow(p: ProductForecast): boolean {
     return p.currentStock <= 1;
 }
-
-/** The subset of a user's products that need restocking. */
-export async function lowStockItems(userId: string): Promise<ProductForecast[]> {
-    const all = await buildForecasts(userId);
-    return all.filter(isLow);
-}
-
-/** How many products need restocking — for the home badge/banner. */
-export async function lowStockCount(userId: string): Promise<number> {
-    return (await lowStockItems(userId)).length;
-}

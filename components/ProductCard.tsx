@@ -5,8 +5,21 @@ import { formatDistanceToNow } from "date-fns";
 import { useState } from "react";
 import { formatStock } from "@/lib/formatStock";
 
+interface ProductCardItem {
+    _id: string;
+    quantity: number;
+    unit: string;
+    purchaseDate: string;
+    product: {
+        name: string;
+        brand: string;
+        imageUrl: string | null;
+        flavor?: string;
+    };
+}
+
 interface ProductCardProps {
-    item: any;
+    item: ProductCardItem;
     onConsume: (id: string) => void;
     onDelete: (id: string) => void;
     // Adjust the pack count by ±1. Optional so existing callers keep working.

@@ -273,7 +273,7 @@ app/
   inventory/      shelf-grouped grid + consumption survey
   analytics/ history/ settings/ login/
   page.tsx        landing + run-low hero carousel
-components/        PhotoCapture, ProductCard, HeroCard, ProductSurvey, Tour, UserMenu
+components/        PhotoCapture, ProductCard, HeroCard, Tour, UserMenu
 lib/
   visionOcr.ts     PaddleOCR-VL client (llama-server)
   parseLabel.ts    text → fields (flavor dictionary, MRP scorer, marketing filter)

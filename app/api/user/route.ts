@@ -119,7 +119,7 @@ export async function PUT(request: Request) {
             update.name = name;
             update.displayName = name;
         }
-        if (typeof body.image === 'string' && body.image.trim()) {
+        if (typeof body.image === 'string' && /^https?:\/\//i.test(body.image.trim())) {
             update.image = body.image.trim().slice(0, 500);
         }
         if (body.surveyFrequency === 'always' || body.surveyFrequency === 'occasional') {

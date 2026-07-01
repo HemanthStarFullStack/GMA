@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
+import { requireAdmin } from '@/lib/adminGuard';
 
 // Liveness/readiness probe. Returns 200 only when the DB is reachable so
 // orchestrators (Docker healthcheck, k8s, load balancers) can gate traffic.
@@ -25,7 +26,7 @@ async function probeModels() {
             ? ping(fetch(`${vlmUrl}/health`, { signal: AbortSignal.timeout(2000) }))
             : Promise.resolve(-1),
         geminiKey
-            ? ping(fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`, { signal: AbortSignal.timeout(4000) }))
+            ? ping(fetch('https://generativelanguage.googleapis.com/v1beta/models', { headers: { 'x-goog-api-key': geminiKey }, signal: AbortSignal.timeout(4000) }))
             : Promise.resolve(-1),
     ]);
     const label = (code: number) => (code === -1 ? 'not_configured' : code === 200 ? 'ok' : code === 0 ? 'unreachable' : `http_${code}`);
@@ -39,6 +40,13 @@ async function probeModels() {
 export async function GET(request: Request) {
     const started = Date.now();
     const deep = new URL(request.url).searchParams.get('deep') === '1';
+    // The plain probe stays public (Docker/CI healthcheck, no secret involved).
+    // Deep fires real outbound calls to Groq/Gemini/the VLM sidecar — gate it
+    // so it can't be crawled to burn API quota or exhaust rate limits.
+    if (deep) {
+        const denied = requireAdmin(request);
+        if (denied) return denied;
+    }
     try {
         await connectDB();
         const state = mongoose.connection.readyState; // 1 = connected
