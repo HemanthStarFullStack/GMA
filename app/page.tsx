@@ -59,9 +59,12 @@ export default async function HomePage() {
                 )}
             </header>
 
-            <main className="flex-1 container mx-auto px-5 flex flex-col py-6 gap-8 lg:gap-12 lg:py-10">
-                <section data-tour="hero" className="grid lg:grid-cols-12 gap-6 items-start lg:items-center lg:flex-1">
-                    <div className="lg:col-span-7 rise">
+            <main className="flex-1 container mx-auto px-5 flex flex-col py-6 gap-8 md:gap-10 md:py-8 lg:gap-12 lg:py-10">
+                {/* Two-column, fit-to-screen from md (iPad portrait) up — below md
+                    it stacks for phones. Was gated at lg, so tablets got the tall
+                    phone layout and scrolled. */}
+                <section data-tour="hero" className="grid md:grid-cols-12 gap-6 items-start md:items-center md:flex-1">
+                    <div className="md:col-span-7 rise">
                         <p className="kicker mb-2">Know your kitchen</p>
                         <h1 className="font-display text-ink text-4xl sm:text-5xl lg:text-6xl font-semibold leading-[0.98]">
                             Restock <span className="italic text-primary">before</span> you run&nbsp;out.
@@ -83,7 +86,7 @@ export default async function HomePage() {
                         </div>
                     </div>
 
-                    <div className="lg:col-span-5 rise" style={{ animationDelay: "120ms" }}>
+                    <div className="md:col-span-5 rise" style={{ animationDelay: "120ms" }}>
                         <HeroCard items={heroItems} isGuest={isGuest} />
                     </div>
                 </section>

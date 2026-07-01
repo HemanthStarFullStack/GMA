@@ -346,7 +346,7 @@ export default function InventoryPage() {
                                                 <span className="pill bg-paper-2 text-ink-soft">{group.length}</span>
                                                 <span className="flex-1 h-px bg-line" />
                                             </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                                 {group.map((item) => (
                                                     <ProductCard key={item._id} item={item} onConsume={handleConsume} onDelete={handleDelete} onAdjust={handleAdjust} />
                                                 ))}
