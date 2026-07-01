@@ -1,12 +1,8 @@
 # GMA — Grocery Management Application
 
-Snap a photo of a product, and GMA tells you **when you'll run out**. It reads the
-label, files the item onto the right shelf, learns how fast your household actually
-goes through it, and projects run-out dates so you restock at the right moment —
-no spreadsheets, no guesswork.
-
-Built to work on **no budget**: every reader and model runs **locally and free**,
-with graceful fallbacks at every layer so a scan never hard-fails.
+Snap a photo of a product and GMA tracks your pantry, learns how fast your
+household uses each item, and tells you when you'll run out — no barcode
+database, no spreadsheets, no per-scan API cost.
 
 > Live: [gma.hemanthify.in](https://gma.hemanthify.in)
 
@@ -14,37 +10,22 @@ with graceful fallbacks at every layer so a scan never hard-fails.
 
 ## What it does
 
-1. **Snap a product.** GMA reads the label — brand, product, flavor, size, price —
-   and pre-fills an editable form. A second shot of the back panel pulls net
-   quantity + MRP that the front doesn't carry.
-2. **Track your pantry.** Items group into shelves (Staples, Fresh, Snacks, Drinks,
-   Frozen, Condiments, Household, Other) with a per-item stock bar.
-3. **Log consumption** when you finish something. A short survey captures how long
-   it really lasted, which sharpens future predictions.
-4. **See run-out forecasts** — analytics turns your stock + habits into "restock by"
+1. **Snap a product.** Reads the label (brand, name, flavor, size, price) into
+   an editable form. A second shot of the back panel fills in net quantity + MRP.
+2. **Track your pantry.** Items group into shelves (Staples, Fresh, Snacks,
+   Drinks, Frozen, Condiments, Household, Other) with a per-item stock bar.
+3. **Shopping list.** Items that run low or out surface automatically; add
+   anything else by hand. Tick one off and it goes straight back to inventory.
+4. **Log consumption** when you finish something — a short survey sharpens
+   future duration estimates.
+5. **Run-out forecasts.** Analytics turns your stock + usage into "restock by"
    dates, most-urgent first.
 
 A guided tour seeds a sample household on first login; clear it anytime from Settings.
 
 ---
 
-## Why photo + OCR (and not barcode lookup)
-
-There is **no free barcode database with good Indian-FMCG coverage** — the open ones
-(OpenFoodFacts/OpenBeautyFacts) miss most Indian packs, and paid APIs cost money. So
-GMA reads the **label itself**, which works for *any* product on day one. A barcode,
-when present, is still used as a stable cache key — but the label is the source of truth.
-
-The **shared catalogue is the real database**: the first time anyone resolves a product
-it's cached (keyed by barcode/identity), so every later scan of that product — by any
-user — is instant and free. Over time the cache becomes a catalogue of exactly the
-things people here actually buy.
-
----
-
-## How label reading works
-
-Two independent layers, each with a fallback, so a scan **never dead-ends**:
+## How it works
 
 ```
             ┌──────────────── READ (pixels → text) ─────────────────┐
@@ -55,67 +36,25 @@ photo  ───► PaddleOCR-VL (0.9B VLM, GPU via llama.cpp)               │
             ► qwen2.5:0.5b  →  brand + name (world knowledge)        │
             └─ fallback: parseLabel heuristics                       │
                                    │                                 │
-            flavor  ← parseLabel dictionary (reliable)               │
+            flavor  ← parseLabel dictionary                          │
             size / price / back-panel  ← deterministic regex         │
                                    ▼                                 │
                          editable confirm form  ◄────────────────────┘
 ```
 
-**Why each layer is split this way** — they play to different strengths:
-
-- **PaddleOCR-VL** (Baidu, 0.9B) reads dense/stylised labels far more cleanly than the
-  PP-OCRv5 OCR engine (e.g. it reads `NO ADDED SUGAR`, not a garbled `NO SER`). Runs on
-  the host GPU via `llama-server` (llama.cpp). If it's down, the CPU PP-OCRv5 sidecar
-  takes over.
-- **qwen2.5:0.5b** makes the call regex can't: *"is `SWING` a brand or a product name?"*
-  A model with world knowledge knows. It owns **brand + name**.
-- **`parseLabel`** owns **flavor** (a curated dictionary — `Pomegranate`, `Mixed Fruit`,
-  `Pink Lily`…), and the small LLM only fills flavor when the dictionary finds nothing.
-- **Regex** owns **price, net quantity, and back-panel detection** — deterministic, so a
-  model can never hallucinate a price. The MRP extractor scores candidates by context to
-  avoid grabbing a batch number or an RDA percentage instead of the real price.
-
-Every layer is **fail-soft**: if the GPU model or LLM is unavailable, the next layer
-covers it, down to a plain heuristic + a manual form. The whole result is logged
-(`[vision] {...}`) so any misread is debuggable from `docker logs`.
-
----
-
-## How consumption + category prediction works
-
-For a newly-seen product, GMA estimates **how long one unit lasts (for one person)** and
-**which category** it is, via a fallback ladder:
+Duration + category for a new product, on the same fail-soft pattern:
 
 ```
 Gemini 2.5 flash-lite  →  Gemini 2.5 flash  →  local Ollama (llama3.2:3b)  →  heuristic
-   (primary)              (separate quota)       (offline backup)             (14d / "Other")
 ```
 
-- The prompt makes the model **reason about pack size** (`unitSize → servings → dailyUse
-  → averageDuration`), so 330 ml, 1 L and 2 L of the same drink get different shelf-lives.
-- A `perPersonDailyRate` is stored so re-estimating for a different household is pure
-  math — no AI call.
-- **Self-healing cache:** a product cached during an outage (heuristic fallback) is
-  flagged `aiPredicted: false` and re-predicted on its next scan, fixing it for everyone.
+A `perPersonDailyRate` is stored per product so re-estimating for a different
+household size is pure math, no AI call. Run-out forecasting integrates
+consumption over how household size actually varied across an item's life
+(not a flat rate), then projects the remainder forward at the current size.
 
-> Note: the duration/category LLM (Gemini, or `llama3.2` as fallback) is **separate** from
-> the label-reading models. Label reading never uses Gemini — it's fully local.
-
----
-
-## How run-out forecasting works
-
-Forecasting is **time-weighted over household size**, not a flat rate:
-
-- Each item's consumption is integrated over how the household size actually varied across
-  its life (a guest for a few days, a permanent move-in), then the remainder is projected
-  forward at the current size. A guest's extra consumption is captured and **persists after
-  they leave**; a permanent move **doesn't retroactively rewrite** past usage.
-- Household-size changes re-estimate every held product from the fixed `perPersonDailyRate`
-  (not by rescaling a rounded value), so repeated changes don't drift.
-- Personal-care items are per-person and aren't scaled by household size.
-
-Consumption surveys feed the learned `averageDuration` back in, so estimates sharpen over time.
+Every layer above has a fallback, so a scan or a forecast never dead-ends —
+worst case it lands on a plain heuristic and an editable manual form.
 
 ---
 
@@ -127,9 +66,9 @@ Browser (Next.js App Router · React 19)
   ▼
 Route handlers (app/api/*)
   ├─ /product-vision  read label: PaddleOCR-VL → PP-OCRv5, then LLM-structure
-  ├─ /barcode         cache → OpenFoodFacts → OpenBeautyFacts → manual
   ├─ /predict         duration/category for the confirm form
-  ├─ /inventory       add/list/delete; de-dupes by incrementing rows
+  ├─ /inventory       add/list/delete/adjust qty (de-dupes by incrementing rows)
+  ├─ /shopping-list    low/out-of-stock reminders + manual items
   ├─ /analytics       time-weighted depletion → run-out forecasts
   ├─ /history /user /demo /health
   │
@@ -141,7 +80,7 @@ Route handlers (app/api/*)
   ├─ lib/localLlm.ts       Ollama llama3.2 + web_search tool
   └─ lib/mongodb.ts        Mongoose connection (cached)
   ▼
-MongoDB · Users · Products (shared catalogue/cache) · Inventory · ConsumptionLog
+MongoDB · Users · Products (shared catalogue/cache) · Inventory · ConsumptionLog · ShoppingList
 
 Host services (GPU, free, local)
   ├─ llama-server  PaddleOCR-VL 0.9B  :8185   (label reader)
@@ -253,11 +192,12 @@ in production.
 | `/api/product-vision` | POST | Read a label photo → `{brand, name, flavor, quantity, price}` |
 | `/api/predict` | POST | Duration + category for the confirm form |
 | `/api/inventory` | GET/POST/DELETE/PATCH | List / add (de-dupes) / remove / adjust qty |
+| `/api/shopping-list` | GET/POST/PATCH/DELETE | List / add manual item / check-off-buy-dismiss / remove |
 | `/api/analytics` | GET | Time-weighted run-out forecasts |
 | `/api/history` | GET/POST | Consumption logs and surveys |
 | `/api/user` | GET/PUT | Household settings (family size, survey pref, tour) |
 | `/api/demo` | POST/DELETE | Seed / clear onboarding data |
-| `/api/health` | GET | DB-aware readiness probe |
+| `/api/health` | GET | DB-aware readiness probe (`?deep=1` also pings the AI providers, admin-gated) |
 
 **Admin** (require `x-admin-secret` matching `ADMIN_SECRET`; 404 if unset): `reset`,
 `refresh-durations`, `backfill-rates`, `debug-gemini`.
@@ -269,16 +209,18 @@ in production.
 ```
 app/
   api/            route handlers (see API overview)
-  scan/           photo → read → confirm, or manual-add
+  scan/           photo → read → confirm, or manual-add (also serves shopping-list's "Add item")
   inventory/      shelf-grouped grid + consumption survey
+  shopping/       low/out-of-stock reminders + manual items
   analytics/ history/ settings/ login/
   page.tsx        landing + run-low hero carousel
-components/        PhotoCapture, ProductCard, HeroCard, Tour, UserMenu
+components/        PhotoCapture, ProductCard, HeroCard, ShoppingTile, Tour, UserMenu
 lib/
   visionOcr.ts     PaddleOCR-VL client (llama-server)
   parseLabel.ts    text → fields (flavor dictionary, MRP scorer, marketing filter)
   labelStructure.ts qwen2.5:0.5b structurer (brand/name)
   depletion.ts     time-weighted stock depletion
+  forecast.ts      buildForecasts / isLow (shared by analytics + shopping-list)
   gemini.ts        duration/category ladder
   localLlm.ts      Ollama llama3.2 + web_search tool
   models.ts        Mongoose schemas
