@@ -50,16 +50,13 @@ async function autoSync(userId: string) {
             .map((row) => [row.productId, clampQty(row.peakQty)]),
     );
 
-    // Drop PENDING/DISMISSED auto entries whose product is no longer low (cleans
-    // resolved-without-buying / dismissed) so a later dip re-suggests it fresh.
-    // Exclude 'done' — that's a purchase record, not a live reminder. Without this
-    // exclusion, ticking "Bought" for anything that restocks past the low threshold
-    // (e.g. buying qty 2 of something) got its own done entry deleted on the very
-    // next sync, before the user could ever see it.
+    // Drop auto entries whose product is no longer low (cleans resolved /
+    // dismissed) so a later dip re-suggests it fresh. "Bought" ticks delete
+    // their own entry immediately (see PATCH), so there's no done status left
+    // for this to worry about clobbering.
     await ShoppingList.deleteMany({
         userId,
         source: 'auto',
-        status: { $ne: 'done' },
         productId: { $nin: lowIds },
     });
 
@@ -249,19 +246,18 @@ export async function PATCH(request: Request) {
         if (!entry) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
         if (action === 'check') {
-            // "Got it": add the item to inventory exactly once, in the quantity the
-            // user dialed (default 1). Works for any entry tied to a product — auto
-            // (forecast) or manual (hand-typed, now a real catalogue product).
-            // boughtAt guards against a double add if they uncheck and re-check.
-            if (entry.productId && (entry.status !== 'done' || !entry.boughtAt)) {
+            // "Bought": add the item to inventory (if tied to a product), then
+            // remove the entry outright — ticking a box shouldn't leave a
+            // struck-through record sitting on the list.
+            if (entry.productId) {
                 const addQty = reqQty ?? clampQty(entry.restockQty);
                 const inventoryItem = await addToInventory(userId, entry.productId, addQty);
                 inventoryItem.peakQty = addQty;
                 await inventoryItem.save();
-                entry.restockQty = addQty;
-                entry.boughtAt = new Date();
             }
-            entry.status = 'done';
+            await entry.deleteOne();
+            revalidatePath('/');
+            return NextResponse.json({ success: true });
         } else if (action === 'uncheck') {
             entry.status = 'pending';
             // Clear boughtAt so a re-check adds to inventory again (user is saying

@@ -100,8 +100,9 @@ export default function ShoppingPage() {
     };
 
     // Separate handler for "check" so we can show a toast when inventory is added.
+    // The server deletes the entry outright on check — nothing lingers struck-through.
     const handleCheck = (item: ListItem) => {
-        const willAdd = !!item.productId && !item.boughtAt;
+        const willAdd = !!item.productId;
         const qtyToAdd = item.productId ? getQty(item) : undefined;
         setBusy((s) => new Set(s).add(item._id));
         fetch("/api/shopping-list", {
@@ -131,10 +132,9 @@ export default function ShoppingPage() {
     // brand/price/etc. and creates the shopping-list entry from there.
     const addManual = () => router.push("/scan?to=shopping");
 
-    // Server already sorts pending before done before dismissed, so slicing off
-    // dismissed keeps everything else in place — no separate "Bought" section,
-    // ticked items just cross out in place.
-    const visible = items.filter((i) => i.status !== "dismissed");
+    // "Bought" deletes the entry server-side, so the list only ever needs to
+    // show what's still pending.
+    const visible = items.filter((i) => i.status === "pending");
     const dismissed = items.filter((i) => i.status === "dismissed");
 
     return (
@@ -177,18 +177,13 @@ export default function ShoppingPage() {
                             {visible.map((item) => {
                                 const r = REASON[item.reason] ?? REASON.manual;
                                 const isBusy = busy.has(item._id);
-                                const isDone = item.status === "done";
                                 return (
-                                    <div key={item._id} className={`pantry-card flex items-center gap-3 p-3 rise ${isDone ? "opacity-60" : ""}`}>
+                                    <div key={item._id} className="pantry-card flex items-center gap-3 p-3 rise">
                                         <button
-                                            onClick={() => (isDone ? act(item._id, "uncheck") : handleCheck(item))}
+                                            onClick={() => handleCheck(item)}
                                             disabled={isBusy}
-                                            title={isDone ? "Undo" : item.productId ? `Bought — add ${getQty(item)} to inventory` : "Bought"}
-                                            className={`w-7 h-7 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors disabled:opacity-50 ${
-                                                isDone
-                                                    ? "bg-olive/15 border-olive text-olive"
-                                                    : "border-line-strong text-transparent hover:border-olive hover:text-olive"
-                                            }`}
+                                            title={item.productId ? `Bought — add ${getQty(item)} to inventory` : "Bought"}
+                                            className="w-7 h-7 rounded-full border-2 border-line-strong flex items-center justify-center text-transparent hover:border-olive hover:text-olive transition-colors flex-shrink-0 disabled:opacity-50"
                                         >
                                             {isBusy ? <Loader2 className="w-4 h-4 animate-spin text-ink-faint" /> : <Check className="w-4 h-4" />}
                                         </button>
@@ -204,22 +199,19 @@ export default function ShoppingPage() {
 
                                         <div className="flex-1 min-w-0">
                                             {item.brand && <p className="kicker truncate">{item.brand}</p>}
-                                            <h3 className={`font-semibold text-ink truncate ${isDone ? "line-through" : ""}`}>{item.name}</h3>
-                                            {!isDone && (
-                                                <div className="mt-1 flex items-center gap-2 flex-wrap">
-                                                    <span className={`pill ${r.cls}`}>{r.label}</span>
-                                                    {/* Pack size only — the count lives in the stepper. */}
-                                                    {item.unit && !/^units?$/i.test(item.unit) && (
-                                                        <span className="pill bg-paper-2 text-ink-soft">{item.unit}</span>
-                                                    )}
-                                                </div>
-                                            )}
+                                            <h3 className="font-semibold text-ink truncate">{item.name}</h3>
+                                            <div className="mt-1 flex items-center gap-2 flex-wrap">
+                                                <span className={`pill ${r.cls}`}>{r.label}</span>
+                                                {/* Pack size only — the count lives in the stepper. */}
+                                                {item.unit && !/^units?$/i.test(item.unit) && (
+                                                    <span className="pill bg-paper-2 text-ink-soft">{item.unit}</span>
+                                                )}
+                                            </div>
                                         </div>
 
                                         {/* Quantity to add to inventory on "Bought" — only for catalogue
-                                            items (manual free-text items can't be added), and only while
-                                            still pending (nothing left to dial once it's bought). */}
-                                        {!isDone && item.productId && (
+                                            items (manual free-text items can't be added). */}
+                                        {item.productId && (
                                             <div className="flex items-center gap-1 flex-shrink-0">
                                                 <button
                                                     onClick={() => bumpQty(item, -1)}
@@ -249,18 +241,14 @@ export default function ShoppingPage() {
                                             </div>
                                         )}
 
-                                        {/* Auto items can only be dismissed while pending — once bought,
-                                            undo is the only way back. Manual items always keep Remove. */}
-                                        {(item.source === "manual" || !isDone) && (
-                                            <button
-                                                onClick={() => (item.source === "manual" ? remove(item._id) : act(item._id, "dismiss"))}
-                                                disabled={isBusy}
-                                                title={item.source === "manual" ? "Remove" : "Dismiss"}
-                                                className="w-9 h-9 rounded-full flex items-center justify-center text-ink-faint hover:text-berry hover:bg-berry/5 transition-colors flex-shrink-0 disabled:opacity-50"
-                                            >
-                                                {item.source === "manual" ? <Trash2 className="w-4 h-4" /> : <X className="w-4 h-4" />}
-                                            </button>
-                                        )}
+                                        <button
+                                            onClick={() => (item.source === "manual" ? remove(item._id) : act(item._id, "dismiss"))}
+                                            disabled={isBusy}
+                                            title={item.source === "manual" ? "Remove" : "Dismiss"}
+                                            className="w-9 h-9 rounded-full flex items-center justify-center text-ink-faint hover:text-berry hover:bg-berry/5 transition-colors flex-shrink-0 disabled:opacity-50"
+                                        >
+                                            {item.source === "manual" ? <Trash2 className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                                        </button>
                                     </div>
                                 );
                             })}
