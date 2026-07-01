@@ -162,41 +162,54 @@ export async function POST(request: Request) {
         if (!name) {
             return NextResponse.json({ success: false, message: 'Item name is required' }, { status: 400 });
         }
+        // Optional — sent by the scan page's manual-entry form when "Add item" on
+        // the shopping list routes there for full details (brand/price/etc.),
+        // exactly like a manual scan entry.
+        const d = body.productDetails || {};
 
         await connectDB();
 
         // A hand-typed item is a real product, exactly like a manual scan entry:
         // upsert a catalogue Product (no separate model) and tie the list entry to
         // it via productId, so ticking "Got it" adds it to inventory like any other
-        // product. $setOnInsert leaves a richer existing entry (e.g. later scanned
-        // with brand/size) untouched.
+        // product. Confirmed details are authoritative — $set them (same
+        // conflict-avoidance pattern as POST /api/inventory).
         const productId = manualId(name);
+        const set: Record<string, unknown> = { name, aiPredicted: !!body.productDetails };
+        if (d.brand !== undefined) set.brand = d.brand || '';
+        if (d.flavor !== undefined) set.flavor = d.flavor || '';
+        if (d.price !== undefined) set.price = (d.price ?? '').toString();
+        if (d.category) set.category = d.category;
+        if (d.imageUrl !== undefined) set.imageUrl = d.imageUrl || null;
+        if (d.unit) set.defaultUnit = String(d.unit).trim().slice(0, 24);
+        if (d.averageDuration) set.averageDuration = Number(d.averageDuration) || 14;
+        if (d.perPersonDailyRate) set.perPersonDailyRate = Number(d.perPersonDailyRate);
+        const setOnInsert: Record<string, unknown> = {
+            barcode: productId,
+            addedBy: 'manual',
+            source: 'manual',
+            isDemo: false,
+        };
+        if (!set.category) setOnInsert.category = 'Other';
+        if (!set.defaultUnit) setOnInsert.defaultUnit = 'units';
+        if (!('averageDuration' in set)) setOnInsert.averageDuration = 14;
         await Product.findOneAndUpdate(
             { barcode: productId },
-            {
-                $setOnInsert: {
-                    barcode: productId,
-                    name,
-                    category: 'Other',
-                    defaultUnit: 'units',
-                    averageDuration: 14,
-                    addedBy: 'manual',
-                    source: 'manual',
-                    aiPredicted: false,
-                    isDemo: false,
-                },
-            },
+            { $set: set, $setOnInsert: setOnInsert },
             { upsert: true },
         );
 
-        const entry = await ShoppingList.create({
-            userId,
-            productId,
-            name,
-            reason: 'manual',
-            source: 'manual',
-            status: 'pending',
-        });
+        // Upsert, not create — re-adding the same name must reuse the existing
+        // entry instead of duplicating it. Resurrects a done/dismissed entry to
+        // pending (typing it again means they want it again).
+        const entry = await ShoppingList.findOneAndUpdate(
+            { userId, productId, source: 'manual' },
+            {
+                $set: { name, reason: 'manual', status: 'pending', boughtAt: null },
+                $setOnInsert: { userId, productId, source: 'manual' },
+            },
+            { upsert: true, new: true },
+        );
 
         revalidatePath('/');
         return NextResponse.json({ success: true, data: { _id: String(entry._id) } });

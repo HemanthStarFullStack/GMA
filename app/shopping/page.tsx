@@ -32,7 +32,6 @@ export default function ShoppingPage() {
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState<Set<string>>(new Set());
     const [name, setName] = useState("");
-    const [adding, setAdding] = useState(false);
     const [showDone, setShowDone] = useState(false);
     const [showDismissed, setShowDismissed] = useState(false);
     // Per-item rebuy quantity the user dials before ticking "Got it"; defaults to
@@ -130,24 +129,13 @@ export default function ShoppingPage() {
             await fetch(`/api/shopping-list?id=${id}`, { method: "DELETE" });
         });
 
-    const addManual = async () => {
+    // "Add item" opens the same manual-entry form as product scan — collects
+    // brand/price/etc. and creates the shopping-list entry from there, instead
+    // of a bare-name POST here.
+    const addManual = () => {
         const trimmed = name.trim();
-        if (!trimmed || adding) return;
-        setAdding(true);
-        try {
-            const res = await fetch("/api/shopping-list", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: trimmed }),
-            });
-            if (res.ok) {
-                setName("");
-                await fetchList();
-                router.refresh(); // invalidate Router Cache so the home badge is fresh on back-nav
-            }
-        } finally {
-            setAdding(false);
-        }
+        if (!trimmed) return;
+        router.push(`/scan?to=shopping&name=${encodeURIComponent(trimmed)}`);
     };
 
     const pending = items.filter((i) => i.status === "pending");
@@ -180,10 +168,10 @@ export default function ShoppingPage() {
                     />
                     <button
                         onClick={addManual}
-                        disabled={!name.trim() || adding}
+                        disabled={!name.trim()}
                         className="btn-primary px-4 py-2.5 flex items-center gap-2 disabled:opacity-50"
                     >
-                        {adding ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                        <Plus className="w-5 h-5" />
                         Add
                     </button>
                 </div>

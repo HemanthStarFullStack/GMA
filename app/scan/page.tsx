@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import PhotoCapture from "@/components/PhotoCapture";
 import { Package, CheckCircle2, Loader2, Minus, Plus, Sparkles, ImagePlus, X, ScanLine } from "lucide-react";
 import BackButton from "@/components/BackButton";
@@ -48,7 +48,19 @@ const emptyForm = (barcode = ""): Form => ({
 });
 
 export default function ScanPage() {
+    return (
+        <Suspense fallback={null}>
+            <ScanPageInner />
+        </Suspense>
+    );
+}
+
+function ScanPageInner() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    // Arrived from the shopping list's "Add item" — same manual-entry form,
+    // but it creates a shopping-list entry instead of adding to inventory.
+    const forShopping = searchParams.get("to") === "shopping";
     const [mode, setMode] = useState<Mode>("scan");
     const [toast, setToast] = useState<string | null>(null);
     const [lookingUp, setLookingUp] = useState(false);
@@ -64,6 +76,17 @@ export default function ScanPage() {
     // not the stale closure value from when the handler was created.
     const formRef = useRef(form);
     formRef.current = form;
+
+    // Jump straight to the manual form, pre-filled with the name typed on the
+    // shopping list — skip the camera step (you don't have the item yet).
+    useEffect(() => {
+        if (forShopping) {
+            setForm({ ...emptyForm(`MANUAL-${Date.now()}`), name: searchParams.get("name") || "" });
+            setLowConf(new Set());
+            setMode("manual");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handlePhoto = async (image: Blob) => {
         setLookingUp(true);
@@ -319,31 +342,33 @@ export default function ScanPage() {
                 ? `OCR-${slugify([form.brand, form.name, unitPart].filter(Boolean).join(" "))}`
                 : form.barcode || `MANUAL-${Date.now()}`;
         setMode("saving");
+        const productDetails = {
+            name: form.name.trim(),
+            brand: form.brand.trim(),
+            flavor: form.flavor.trim(),
+            price: form.price.trim(),
+            category: form.category,
+            imageUrl: form.imageUrl,
+            unit: form.unit,
+            averageDuration: Number(form.averageDuration) || 14,
+            ...(form.perPersonDailyRate ? { perPersonDailyRate: form.perPersonDailyRate } : {}),
+            addedBy: form.addedBy,
+            source: form.source,
+        };
         try {
-            const res = await fetch("/api/inventory", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    productId,
-                    quantity: form.quantity,
-                    unit: form.unit || "units",
-                    productDetails: {
-                        name: form.name.trim(),
-                        brand: form.brand.trim(),
-                        flavor: form.flavor.trim(),
-                        price: form.price.trim(),
-                        category: form.category,
-                        imageUrl: form.imageUrl,
-                        unit: form.unit,
-                        averageDuration: Number(form.averageDuration) || 14,
-                        ...(form.perPersonDailyRate ? { perPersonDailyRate: form.perPersonDailyRate } : {}),
-                        addedBy: form.addedBy,
-                        source: form.source,
-                    },
-                }),
-            });
+            const res = forShopping
+                ? await fetch("/api/shopping-list", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: form.name.trim(), productDetails }),
+                })
+                : await fetch("/api/inventory", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ productId, quantity: form.quantity, unit: form.unit || "units", productDetails }),
+                });
             if (!res.ok) throw new Error();
-            finish(`${form.name.trim()} added`);
+            finish(`${form.name.trim()} added${forShopping ? " to your shopping list" : ""}`);
         } catch {
             setToast("Could not add item. Try again.");
             setMode(returnMode);
@@ -354,8 +379,8 @@ export default function ScanPage() {
         setMode("done");
         setToast(msg);
         // replace, not push: scan is a transient step — drop it from history so
-        // back from inventory returns to home, not to the scanner.
-        setTimeout(() => router.replace("/inventory"), 1100);
+        // back returns to home/shopping, not to the scanner.
+        setTimeout(() => router.replace(forShopping ? "/shopping" : "/inventory"), 1100);
     };
 
     const isConfirm = mode === "confirm";
@@ -366,7 +391,7 @@ export default function ScanPage() {
             <header className="border-b border-line">
                 <div className="container mx-auto px-5 py-4 flex items-center justify-between">
                     <BackButton />
-                    <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">Add a product</h1>
+                    <h1 className="font-display text-xl sm:text-2xl font-semibold text-ink">{forShopping ? "Add to shopping list" : "Add a product"}</h1>
                     <UserMenu />
                 </div>
             </header>
@@ -493,17 +518,21 @@ export default function ScanPage() {
                                         {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                                     </select>
                                 </Field>
-                                <Field label="Quantity">
-                                    <div className="flex items-center gap-3 h-[38px]">
-                                        <button onClick={() => setForm((f) => ({ ...f, quantity: Math.max(1, f.quantity - 1) }))} className="w-9 h-9 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2">
-                                            <Minus className="w-4 h-4" />
-                                        </button>
-                                        <span className="w-6 text-center font-semibold text-ink">{form.quantity}</span>
-                                        <button onClick={() => setForm((f) => ({ ...f, quantity: f.quantity + 1 }))} className="w-9 h-9 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2">
-                                            <Plus className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </Field>
+                                {/* Not-yet-bought — the shopping list's own stepper decides how
+                                    many to buy once you tick it off, not this form. */}
+                                {!forShopping && (
+                                    <Field label="Quantity">
+                                        <div className="flex items-center gap-3 h-[38px]">
+                                            <button onClick={() => setForm((f) => ({ ...f, quantity: Math.max(1, f.quantity - 1) }))} className="w-9 h-9 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2">
+                                                <Minus className="w-4 h-4" />
+                                            </button>
+                                            <span className="w-6 text-center font-semibold text-ink">{form.quantity}</span>
+                                            <button onClick={() => setForm((f) => ({ ...f, quantity: f.quantity + 1 }))} className="w-9 h-9 rounded-full border border-line-strong flex items-center justify-center hover:bg-paper-2">
+                                                <Plus className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </Field>
+                                )}
                             </div>
 
                             {/* Duration — the predicted "time taken to consume", editable + re-estimable */}
@@ -542,7 +571,7 @@ export default function ScanPage() {
 
                         <div className="flex gap-3 mt-6">
                             <button onClick={() => setMode("scan")} className="btn-ghost flex-1 py-3">{isConfirm ? "Scan again" : "Cancel"}</button>
-                            <button onClick={saveProduct} className="btn-primary flex-1 py-3">Add to inventory</button>
+                            <button onClick={saveProduct} className="btn-primary flex-1 py-3">{forShopping ? "Add to shopping list" : "Add to inventory"}</button>
                         </div>
                     </div>
                 )}
