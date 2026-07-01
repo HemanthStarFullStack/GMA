@@ -49,6 +49,15 @@ function recognizeSerial(ab) {
     return prev.then(() => ocr.recognize(ab, { flatten: true })).finally(() => release());
 }
 
+// Buffering a request body happens before recognizeSerial's lock even sees
+// it, so unbounded concurrent uploads could each hold MAX_BYTES in memory
+// while queued behind the serial OCR lock. Cap how many requests may be
+// buffering/processing at once; anything past that gets a fast 503 instead
+// of holding memory. Not internet-reachable (Docker-network only), but cheap
+// to bound anyway.
+const MAX_CONCURRENT = 4;
+let inFlight = 0;
+
 const server = createServer(async (req, res) => {
     const json = (code, obj) => {
         res.writeHead(code, { "content-type": "application/json" });
@@ -60,6 +69,8 @@ const server = createServer(async (req, res) => {
 
     if (Number(req.headers["content-length"] || 0) > MAX_BYTES) return json(413, { error: "image too large" });
 
+    if (inFlight >= MAX_CONCURRENT) return json(503, { error: "busy, try again" });
+    inFlight++;
     try {
         const chunks = [];
         let size = 0;
@@ -88,6 +99,8 @@ const server = createServer(async (req, res) => {
     } catch (e) {
         console.warn("[ocr] recognize failed:", e?.message || e);
         json(500, { error: "recognition failed" });
+    } finally {
+        inFlight--;
     }
 });
 

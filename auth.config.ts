@@ -3,6 +3,12 @@ import Google from "next-auth/providers/google"
 import Credentials from "next-auth/providers/credentials"
 import type { NextAuthConfig } from "next-auth"
 
+// Fail-OPEN, not fail-closed: unlike adminGuard.ts (which disables its routes
+// unless a secret is explicitly set), this provider is unauthenticated login
+// as a fixed user, excluded only by NODE_ENV being exactly "production". The
+// Dockerfile sets that explicitly (verified), but any other launcher (bare
+// `next start`, a staging box, a different container base) that doesn't set
+// NODE_ENV=production would silently expose it. Never gate this any other way.
 const devProviders = process.env.NODE_ENV !== "production"
     ? [
         Credentials({
