@@ -50,11 +50,16 @@ async function autoSync(userId: string) {
             .map((row) => [row.productId, clampQty(row.peakQty)]),
     );
 
-    // Drop auto entries whose product is no longer low (cleans resolved / bought /
-    // dismissed) so a later dip re-suggests it fresh.
+    // Drop PENDING/DISMISSED auto entries whose product is no longer low (cleans
+    // resolved-without-buying / dismissed) so a later dip re-suggests it fresh.
+    // Exclude 'done' — that's a purchase record, not a live reminder. Without this
+    // exclusion, ticking "Bought" for anything that restocks past the low threshold
+    // (e.g. buying qty 2 of something) got its own done entry deleted on the very
+    // next sync, before the user could ever see it.
     await ShoppingList.deleteMany({
         userId,
         source: 'auto',
+        status: { $ne: 'done' },
         productId: { $nin: lowIds },
     });
 
