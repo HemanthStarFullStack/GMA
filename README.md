@@ -27,34 +27,39 @@ A guided tour seeds a sample household on first login; clear it anytime from Set
 
 ## How it works
 
+Every AI-shaped step is a **cloud API first, local model as the offline
+fallback** — not the other way around. All three ladders bottom out at a
+plain heuristic/regex so a scan or a forecast never dead-ends:
+
 ```
             ┌──────────────── READ (pixels → text) ─────────────────┐
-photo  ───► PaddleOCR-VL (0.9B VLM, GPU via llama.cpp)               │
-            └─ fallback: PP-OCRv5 sidecar (CPU container)            │
-                                   │ clean text                      │
-            ┌──────────── STRUCTURE (text → fields) ────────────────┤
-            ► qwen2.5:0.5b  →  brand + name (world knowledge)        │
-            └─ fallback: parseLabel heuristics                       │
-                                   │                                 │
+photo  ───► Gemini flash (front) — fast, frees the local GPU          │
+            └─ fallback: local Qwen3-VL-2B (llama.cpp, host GPU)      │
+               └─ fallback: PP-OCRv5 sidecar (CPU container)          │
+                                   │ clean text                       │
+            ┌──────────── STRUCTURE (text → fields) ─────────────────┤
+            ► Groq (Llama-3.3-70b / gpt-oss-120b) → brand + name      │
+            └─ fallback: local Ollama qwen2.5:0.5b → parseLabel       │
+                                   │                                  │
             flavor  ← parseLabel dictionary                          │
-            size / price / back-panel  ← deterministic regex         │
-                                   ▼                                 │
-                         editable confirm form  ◄────────────────────┘
+            size / price / back-panel  ← deterministic regex          │
+                                   ▼                                  │
+                         editable confirm form  ◄─────────────────────┘
 ```
+
+Back-panel reads (net quantity + MRP) use the same reader chain, targeted so
+the output is a couple of fields instead of a full transcription.
 
 Duration + category for a new product, on the same fail-soft pattern:
 
 ```
-Gemini 2.5 flash-lite  →  Gemini 2.5 flash  →  local Ollama (llama3.2:3b)  →  heuristic
+Groq (text)  →  Gemini 2.5 flash-lite  →  Gemini 2.5 flash  →  local Ollama (llama3.2:3b)  →  heuristic
 ```
 
 A `perPersonDailyRate` is stored per product so re-estimating for a different
 household size is pure math, no AI call. Run-out forecasting integrates
 consumption over how household size actually varied across an item's life
 (not a flat rate), then projects the remainder forward at the current size.
-
-Every layer above has a fallback, so a scan or a forecast never dead-ends —
-worst case it lands on a plain heuristic and an editable manual form.
 
 ---
 
@@ -65,27 +70,27 @@ Browser (Next.js App Router · React 19)
   │  camera → photo
   ▼
 Route handlers (app/api/*)
-  ├─ /product-vision  read label: PaddleOCR-VL → PP-OCRv5, then LLM-structure
+  ├─ /product-vision  read label: Gemini → local Qwen3-VL-2B → PP-OCRv5, then Groq-structure
   ├─ /predict         duration/category for the confirm form
   ├─ /inventory       add/list/delete/adjust qty (de-dupes by incrementing rows)
-  ├─ /shopping-list    low/out-of-stock reminders + manual items
+  ├─ /shopping-list   low/out-of-stock reminders + manual items
   ├─ /analytics       time-weighted depletion → run-out forecasts
   ├─ /history /user /demo /health
   │
-  ├─ lib/visionOcr.ts      PaddleOCR-VL client (llama-server, OpenAI API)
+  ├─ lib/visionOcr.ts      Gemini flash reader → local Qwen3-VL-2B fallback (llama-server)
   ├─ lib/parseLabel.ts     text → fields heuristics (flavor dict, MRP scorer)
-  ├─ lib/labelStructure.ts qwen2.5:0.5b structurer (brand/name)
+  ├─ lib/labelStructure.ts Groq structurer (brand/name) → local qwen2.5:0.5b fallback
   ├─ lib/depletion.ts      time-weighted stock depletion
-  ├─ lib/gemini.ts         duration/category ladder
-  ├─ lib/localLlm.ts       Ollama llama3.2 + web_search tool
+  ├─ lib/gemini.ts         Groq → Gemini duration/category ladder
+  ├─ lib/localLlm.ts       Ollama llama3.2 fallback + web_search tool
   └─ lib/mongodb.ts        Mongoose connection (cached)
   ▼
 MongoDB · Users · Products (shared catalogue/cache) · Inventory · ConsumptionLog · ShoppingList
 
-Host services (GPU, free, local)
-  ├─ llama-server  PaddleOCR-VL 0.9B  :8185   (label reader)
-  └─ Ollama        qwen2.5:0.5b       :11434  (label structurer)
-                   llama3.2:3b               (duration fallback)
+Host services (GPU, offline fallback only — not the primary path)
+  ├─ llama-server  Qwen3-VL-2B        :8185   (label reader fallback, if Gemini is down)
+  └─ Ollama        qwen2.5:0.5b       :11434  (structurer fallback, if Groq is down)
+                   llama3.2:3b               (duration fallback, if Groq + Gemini are down)
 ```
 
 ### Tech stack
@@ -93,13 +98,15 @@ Host services (GPU, free, local)
 - **Styling:** Tailwind CSS v4
 - **Auth:** NextAuth v5 (Google) + MongoDB adapter
 - **Database:** MongoDB + Mongoose
-- **Label reader:** PaddleOCR-VL 0.9B (GPU, via llama.cpp `llama-server`) + PP-OCRv5 (CPU sidecar)
-- **Label structurer:** qwen2.5:0.5b (Ollama)
-- **Duration/category AI:** Google Gemini → local `llama3.2:3b` → heuristic
+- **Label reader (pixels → text):** Gemini flash → local Qwen3-VL-2B (GPU, llama.cpp) → PP-OCRv5 (CPU sidecar)
+- **Label structurer (text → brand/name):** Groq (`llama-3.3-70b`/`gpt-oss-120b`, free tier) → local `qwen2.5:0.5b` fallback
+- **Duration/category AI:** Groq (text) → Google Gemini → local `llama3.2:3b` → heuristic
 - **Deploy:** Docker (multi-stage, non-root) + docker compose; Cloudflare Tunnel
 
-Everything model-related runs **locally on a 4 GB GPU** (PaddleOCR-VL ~1.8 GB +
-qwen2.5:0.5b ~0.5 GB co-reside) — no per-scan API cost.
+The local GPU models exist so the app **degrades to fully offline/free**
+if Gemini or Groq are unset, rate-limited, or down — not because they're the
+default path. With `GEMINI_API_KEY` and `GROQ_API_KEY` set, every scan and
+prediction is a cloud API call; local models only fire on a cloud miss.
 
 ---
 
@@ -127,19 +134,23 @@ it's disabled automatically when `NODE_ENV=production`.
 Generate `AUTH_SECRET` with `npx auth secret`. For Google OAuth, add
 `http://localhost:3000/api/auth/callback/google` as an authorized redirect URI.
 
-### (Optional) the local label models
+### (Optional) the local fallback models
+
+Only needed for offline use, or as a safety net if `GEMINI_API_KEY` /
+`GROQ_API_KEY` are unset, rate-limited, or down — they're not on the default
+path when those keys are set.
 
 ```bash
-# Structurer — one pull
+# Structurer fallback — one pull
 ollama pull qwen2.5:0.5b
 
-# Reader — PaddleOCR-VL on llama.cpp (GPU). See scripts/start-vision-ocr.ps1
-#   model: PaddlePaddle/PaddleOCR-VL-1.6-GGUF  (+ its -mmproj.gguf)
-#   run:   llama-server -m model.gguf --mmproj mmproj.gguf -ngl 99 --host 0.0.0.0 --port 8185
+# Reader fallback — Qwen3-VL-2B (Q4) on llama.cpp (GPU). See scripts/start-vision-ocr.ps1
+#   run:   llama-server -m qwen3vl.gguf --mmproj qwen3vl-mmproj.gguf -ngl 99 --host 0.0.0.0 --port 8185
 ```
 
-Set `VISION_OCR_URL` / `OLLAMA_STRUCT_MODEL` to point at them. If unset or unreachable,
-the app falls back to the PP-OCRv5 sidecar and the `parseLabel` heuristics.
+Set `VISION_OCR_URL` / `OLLAMA_STRUCT_MODEL` to point at them. If unset or unreachable
+(and Gemini/Groq are also unset or down), the app falls back to the PP-OCRv5 sidecar
+and the `parseLabel` heuristics.
 
 ---
 
@@ -154,8 +165,9 @@ docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d --bu
 
 - Multi-stage, **non-root** standalone build with a container `HEALTHCHECK` on `/api/health`.
 - Secrets via `.env`; the app waits for MongoDB to be **healthy** before starting.
-- Host GPU services (PaddleOCR-VL `llama-server`, Ollama) are reached over
+- Host GPU services (Qwen3-VL-2B `llama-server`, Ollama) are reached over
   `host.docker.internal`. Bind `llama-server` to `0.0.0.0` so the container can reach it.
+  Both are fallback-only — set `GEMINI_API_KEY` + `GROQ_API_KEY` and they're never called.
 - User uploads (`public/uploads`) persist via the `gma_uploads` volume. For multi-instance
   deploys, switch to object storage (S3/R2).
 
@@ -172,12 +184,13 @@ See [`ENV_SETUP.md`](ENV_SETUP.md) for the full, documented list. Essentials:
 | `MONGODB_URI` | ✅ | MongoDB connection string |
 | `AUTH_SECRET` | ✅ | NextAuth signing secret (`npx auth secret`) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | prod | Google OAuth |
-| `VISION_OCR_URL` | optional | PaddleOCR-VL `llama-server` (e.g. `http://host.docker.internal:8185`); empty → PP-OCRv5 only |
-| `OCR_URL` | optional | PP-OCRv5 sidecar (default `http://ocr:4000`) |
+| `GEMINI_API_KEY` | optional | **Primary** label reader (front/back); also the duration/category fallback if Groq is unavailable |
+| `GROQ_API_KEY` / `GROQ_MODEL` | optional | **Primary** structurer + duration/category predictor (default model `openai/gpt-oss-120b`) |
+| `VISION_OCR_URL` | optional | Local Qwen3-VL-2B `llama-server`, used only if Gemini is unset/down (e.g. `http://host.docker.internal:8185`); empty → PP-OCRv5 only |
+| `OCR_URL` | optional | PP-OCRv5 sidecar, last-resort reader fallback (default `http://ocr:4000`) |
 | `OLLAMA_URL` | optional | Ollama host (default `http://host.docker.internal:11434`) |
-| `OLLAMA_STRUCT_MODEL` / `LABEL_LLM_ENABLED` | optional | Label structurer (default `qwen2.5:1.5b`) |
-| `OLLAMA_MODEL` / `LOCAL_LLM_ENABLED` | optional | Duration-prediction LLM fallback (`llama3.2:3b`) |
-| `GEMINI_API_KEY` | optional | Primary duration/category predictor |
+| `OLLAMA_STRUCT_MODEL` / `LABEL_LLM_ENABLED` | optional | Structurer fallback if Groq is unavailable (default `qwen2.5:1.5b`) |
+| `OLLAMA_MODEL` / `LOCAL_LLM_ENABLED` | optional | Duration-prediction fallback if Groq + Gemini are unavailable (`llama3.2:3b`) |
 | `ADMIN_SECRET` | optional | Enables `/api/admin/*`; routes 404 without it |
 
 Boot-time validation (`instrumentation.ts`) fails fast if a required variable is missing
@@ -216,9 +229,9 @@ app/
   page.tsx        landing + run-low hero carousel
 components/        PhotoCapture, ProductCard, HeroCard, ShoppingTile, Tour, UserMenu
 lib/
-  visionOcr.ts     PaddleOCR-VL client (llama-server)
+  visionOcr.ts     Gemini flash reader → local Qwen3-VL-2B fallback (llama-server)
   parseLabel.ts    text → fields (flavor dictionary, MRP scorer, marketing filter)
-  labelStructure.ts qwen2.5:0.5b structurer (brand/name)
+  labelStructure.ts Groq structurer → local qwen2.5:0.5b fallback (brand/name)
   depletion.ts     time-weighted stock depletion
   forecast.ts      buildForecasts / isLow (shared by analytics + shopping-list)
   gemini.ts        duration/category ladder

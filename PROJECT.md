@@ -26,7 +26,7 @@ The "intelligence" is consumption forecasting: from past consumption logs + curr
   - **Mongoose** (`lib/mongodb.ts`) for all app data (products, inventory, logs, shopping).
   - **MongoClient** (`lib/mongodb-client.ts`) for the NextAuth MongoDB adapter.
 - **Auth**: NextAuth v5 (beta), **JWT session strategy**, MongoDB adapter for user/account storage.
-- **AI/external**: Gemini (prediction), Groq (label structuring), self-hosted Qwen3-VL via llama.cpp (label OCR), Ollama (local LLM fallback), PP-OCRv5 ONNX sidecar (CPU OCR rescue). All optional — app degrades gracefully if any are absent.
+- **AI/external**: Gemini (primary label reader; prediction fallback), Groq (primary label structurer AND primary predictor), self-hosted Qwen3-VL via llama.cpp (label OCR fallback), Ollama (structurer + prediction fallback), PP-OCRv5 ONNX sidecar (last-resort OCR). All optional — app degrades gracefully if any are absent, but with both keys set, cloud APIs are the default path, not the fallback.
 - **Deploy**: Docker Compose (`app`, `ocr`, `mongodb`; optional `mongo-express`, `cloudflared`).
 - **Dependencies of note** (`package.json`): `driver.js` (guided tour), `lucide-react` (icons), `date-fns` (date formatting), `framer-motion`, `recharts`, `@rive-app/*`, `@opeepsfun/open-peeps` (animation/avatar libs — **not encountered in the page/component files reviewed in this pass**; likely tied to home-page household-avatar work per project history, unverified here), `playwright` (dev-only, screenshots/testing).
 
@@ -232,17 +232,18 @@ Predictions object: `{consumptionRate (round 2dp), daysUntilEmpty (round 1dp), r
 
 ### Shelf-life + category — `predictProductMeta(name, brand, categoryHint, unit, extra)`
 Returns `{averageDuration, category, predicted, perPersonDailyRate}`. **Tiers (never hard-fail):**
-1. **Gemini** (`gemini-2.5-flash-lite` → `gemini-2.5-flash`, separate quota buckets, JSON mode, thinking disabled, 9 s timeout). Prompt asks the model to reason step-by-step for **one unit, one person**: unitSize → servingsPerUnit → dailyUse → averageDuration (whole days, ≥1) → category (from the fixed 12-item list). Few-shot examples calibrate sizes. The app then **scales per-person → household in code** (`÷ householdSize`, except Personal Care). `perPersonDailyRate = dailyUse/servingsPerUnit`.
-2. **Local LLM** (`lib/localLlm.ts`, Ollama, with web_search) — only if Gemini fails; instant skip if Ollama down.
-3. **Heuristic fallback**: `{averageDuration: forHousehold(14), category: normalizeCategory(hint), predicted:false}`.
+1. **Groq** (text, `openai/gpt-oss-120b` by default, separate quota from the Gemini image reader) — primary.
+2. **Gemini** (`gemini-2.5-flash-lite` → `gemini-2.5-flash`, separate quota buckets, JSON mode, thinking disabled, 9 s timeout) — fallback if Groq is down/over quota. Prompt asks the model to reason step-by-step for **one unit, one person**: unitSize → servingsPerUnit → dailyUse → averageDuration (whole days, ≥1) → category (from the fixed 12-item list). Few-shot examples calibrate sizes. The app then **scales per-person → household in code** (`÷ householdSize`, except Personal Care). `perPersonDailyRate = dailyUse/servingsPerUnit`.
+3. **Local LLM** (`lib/localLlm.ts`, Ollama, with web_search) — only if Groq and Gemini both fail; instant skip if Ollama down.
+4. **Heuristic fallback**: `{averageDuration: forHousehold(14), category: normalizeCategory(hint), predicted:false}`.
 
 `CATEGORIES` (the 12) live in `gemini.ts` and are the single source of truth. `normalizeCategory` maps loose strings onto them.
 
 ### Label OCR — `lib/visionOcr.ts`
-Qwen3-VL-2B (Q4) served by llama.cpp `llama-server` (OpenAI-compatible) on the host GPU (`VISION_OCR_URL`). Two modes: `full` (transcribe everything, front) and `back` (ask **only** for net quantity, grounded — copy printed digits, never compute; price deliberately not asked because a 2B model fabricates MRPs). 30 s reachability cache; 60 s read timeout. Fail-soft → null → caller uses the PP-OCRv5 sidecar.
+Primary **Gemini** flash (`FRONT_READER=gemini`, the default whenever `GEMINI_API_KEY` is set) — ~10x faster than the local VLM and scored higher in the 35-scan eval, and it frees the local GPU during scans. Falls back to local **Qwen3-VL-2B** (Q4) served by llama.cpp `llama-server` (OpenAI-compatible) on the host GPU (`VISION_OCR_URL`) if Gemini is unset/down. Two modes: `full` (transcribe everything, front) and `back` (ask **only** for net quantity, grounded — copy printed digits, never compute; price deliberately not asked because a small model fabricates MRPs). 30 s reachability cache; 60 s read timeout. Fail-soft → null → caller uses the PP-OCRv5 sidecar as the last resort.
 
 ### Label structuring — `lib/labelStructure.ts`
-`structureLabel(text)` turns OCR text into `{brand, name, flavor}`. Primary **Groq** (`llama-3.3-70b-versatile`, JSON mode, free tier) → fallback **Ollama** (`qwen2.5:1.5b`). Anti-hallucination: brand/flavor words **must** appear in the OCR text; name may also be a known generic product TYPE (`TYPE_WORDS`) so "Juice" can be inferred for a brand+flavor-only front, but "Foggy Juice" can't be fabricated. `GROQ_ENABLED` (key present) makes structuring run even on confident parses.
+`structureLabel(text)` turns OCR text into `{brand, name, flavor}`. Primary **Groq** (default `openai/gpt-oss-120b`, JSON mode, free tier) → fallback **Ollama** (`qwen2.5:1.5b`). Anti-hallucination: brand/flavor words **must** appear in the OCR text; name may also be a known generic product TYPE (`TYPE_WORDS`) so "Juice" can be inferred for a brand+flavor-only front, but "Foggy Juice" can't be fabricated. `GROQ_ENABLED` (key present) makes structuring run even on confident parses.
 
 ### Deterministic parser — `lib/parseLabel.ts` + `groceryPool.ts`
 No AI: regex for quantity (prefers declared net quantity) and price, back-panel detection, and font-size heuristics for name/brand. `findProductTerm` matches lines against a product-term dictionary (`grocery-pool.json`) to tell product (has a pool term) from brand (the leftover prominent line); marketing/claim text and generic packaging words are filtered out so they don't hijack the name/brand or mark a parse "confident".
@@ -306,8 +307,8 @@ Shared by inventory POST, history "Buy again", and shopping "got it". Increment 
 | `AUTH_URL` / `NEXTAUTH_URL` | Public URL | `https://<APP_DOMAIN>` under Cloudflare |
 | `AUTH_TRUST_HOST` | NextAuth behind proxy | `"true"` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth | sign-in disabled if unset (warn) |
-| `GEMINI_API_KEY` | Gemini prediction | falls back to local LLM/heuristic if unset |
-| `GROQ_API_KEY` / `GROQ_MODEL` | Label structuring (primary) | `llama-3.3-70b-versatile` |
+| `GEMINI_API_KEY` | Primary label reader (front/back); prediction fallback if Groq is down | falls back to local Qwen3-VL/LLM/heuristic if unset |
+| `GROQ_API_KEY` / `GROQ_MODEL` | Primary label structurer AND primary predictor | default `openai/gpt-oss-120b` |
 | `VISION_OCR_URL` | Qwen3-VL llama.cpp server | compose default `http://host.docker.internal:8185` |
 | `OCR_URL` | PP-OCRv5 sidecar | `http://ocr:4000` |
 | `OLLAMA_URL` / `OLLAMA_STRUCT_MODEL` / `OLLAMA_MODEL` | local LLM fallbacks | host Ollama |

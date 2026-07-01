@@ -15,8 +15,9 @@ See [`.env.example`](.env.example) for the full, documented list. The essentials
 | `MONGODB_URI` | ✅ | MongoDB connection string (Atlas or the compose `mongodb` service) |
 | `AUTH_SECRET` | ✅ | NextAuth signing secret — `npx auth secret` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | prod | Google OAuth sign-in |
-| `GEMINI_API_KEY` | optional | Primary AI predictor; falls back to local LLM → heuristic if unset |
-| `OLLAMA_URL` / `OLLAMA_MODEL` | optional | Local LLM fallback (Ollama). `LOCAL_LLM_ENABLED=false` to disable |
+| `GROQ_API_KEY` / `GROQ_MODEL` | optional | **Primary** structurer + duration/category predictor (default model `openai/gpt-oss-120b`) |
+| `GEMINI_API_KEY` | optional | Duration/category fallback if Groq is unavailable; then local LLM → heuristic |
+| `OLLAMA_URL` / `OLLAMA_MODEL` | optional | Local LLM fallback if Groq + Gemini are unavailable. `LOCAL_LLM_ENABLED=false` to disable |
 | `ADMIN_SECRET` | optional | Enables `/api/admin/*`; routes return 404 if unset |
 
 In development a **Test Account** credentials provider is available (no Google needed);
