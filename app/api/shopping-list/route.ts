@@ -174,7 +174,13 @@ export async function POST(request: Request) {
         // it via productId, so ticking "Got it" adds it to inventory like any other
         // product. Confirmed details are authoritative — $set them (same
         // conflict-avoidance pattern as POST /api/inventory).
-        const productId = manualId(name);
+        //
+        // A real photo/OCR scan sends its own deterministic OCR-<slug> id — use it
+        // so this ties to the SAME catalogue entry a normal scan-to-inventory would,
+        // instead of a disconnected MANUAL- id. A plain typed name sends none, so it
+        // falls back to the name-based id (still dedupes repeats by name).
+        const clientProductId = (body.productId || '').toString().trim().slice(0, 120);
+        const productId = clientProductId || manualId(name);
         const set: Record<string, unknown> = { name, aiPredicted: !!body.productDetails };
         if (d.brand !== undefined) set.brand = d.brand || '';
         if (d.flavor !== undefined) set.flavor = d.flavor || '';

@@ -354,7 +354,17 @@ function ScanPageInner() {
                 ? await fetch("/api/shopping-list", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: form.name.trim(), productDetails }),
+                    // Only forward productId for a real photo/OCR scan — the OCR-<slug>
+                    // id ties it to the SAME catalogue entry a normal scan-to-inventory
+                    // would use, so "Got it" later merges into that stock instead of
+                    // creating a disconnected MANUAL- product. Plain typed names (no
+                    // photo) keep the server's deterministic manualId(name) so repeats
+                    // still dedupe by name, not by a fresh MANUAL-<timestamp> each time.
+                    body: JSON.stringify({
+                        name: form.name.trim(),
+                        productDetails,
+                        ...(form.source === "ocr" ? { productId } : {}),
+                    }),
                 })
                 : await fetch("/api/inventory", {
                     method: "POST",

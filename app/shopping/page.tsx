@@ -33,7 +33,7 @@ export default function ShoppingPage() {
     const [busy, setBusy] = useState<Set<string>>(new Set());
     const [showDone, setShowDone] = useState(false);
     const [showDismissed, setShowDismissed] = useState(false);
-    // Per-item rebuy quantity the user dials before ticking "Got it"; defaults to
+    // Per-item rebuy quantity the user dials before ticking "Bought"; defaults to
     // the remembered purchase quantity from the server. Their edits survive refreshes.
     const [qty, setQty] = useState<Record<string, number>>({});
     const [toast, setToast] = useState<string | null>(null);
@@ -181,7 +181,7 @@ export default function ShoppingPage() {
                                         <button
                                             onClick={() => handleCheck(item)}
                                             disabled={isBusy}
-                                            title={item.productId ? `Got it — add ${getQty(item)} to inventory` : "Got it"}
+                                            title={item.productId ? `Bought — add ${getQty(item)} to inventory` : "Bought"}
                                             className="w-7 h-7 rounded-full border-2 border-line-strong flex items-center justify-center text-transparent hover:border-olive hover:text-olive transition-colors flex-shrink-0 disabled:opacity-50"
                                         >
                                             {isBusy ? <Loader2 className="w-4 h-4 animate-spin text-ink-faint" /> : <Check className="w-4 h-4" />}
@@ -208,7 +208,7 @@ export default function ShoppingPage() {
                                             </div>
                                         </div>
 
-                                        {/* Quantity to add to inventory on "Got it" — only for catalogue
+                                        {/* Quantity to add to inventory on "Bought" — only for catalogue
                                             items (manual free-text items can't be added). */}
                                         {item.productId && (
                                             <div className="flex items-center gap-1 flex-shrink-0">
@@ -260,7 +260,7 @@ export default function ShoppingPage() {
                                     className="flex items-center gap-2 text-sm font-semibold text-ink-soft hover:text-ink mb-3"
                                 >
                                     {showDone ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                                    Got it · {done.length}
+                                    Bought · {done.length}
                                 </button>
                                 {showDone && (
                                     <div className="space-y-2.5">
